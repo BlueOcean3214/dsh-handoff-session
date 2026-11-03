@@ -97,6 +97,7 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 仍缺：
 
 - 官方目录 PR：条目文件已生成在 `market/submission/BlueOcean3214__dsh-handoff-session.yml`，但 CI 要求**仓库创建满 1 天**，最早 2026-11-04 14:20（+08:00）之后才能提。步骤见 [`docs/catalog-submission.md`](docs/catalog-submission.md)。
+  - 已经安排好自动提交：`market/open-catalog-pr.mjs`（幂等，先查目录/已有 PR，再 fork → 建分支 → 提交条目 → 开 PR，成功后会删掉 token 文件），由 Windows 计划任务 `dsh-handoff-catalog-pr` 在 2026-11-04 14:25 运行，日志写 `.dsh/catalog-pr.log`。手动补跑：`node market/open-catalog-pr.mjs`（`--dry-run` 只检查条件）。
 - `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
 
 > 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。
