@@ -50,7 +50,7 @@ git config user.email "你的邮箱"
 **A3. 推送**：
 
 ```powershell
-git remote add origin https://github.com/<你的用户名>/dsh-handoff-session.git
+git remote add origin https://github.com/BlueOcean3214/dsh-handoff-session.git
 git push -u origin main
 ```
 
@@ -72,22 +72,22 @@ git push -u origin main
 
 ## 步骤 C：生成条目文件并提 PR
 
-**C1. 生成条目**（把 `<你的用户名>` 换成真的，同时会把 `repository`/`homepage`/`bugs` 写进 `package.json`）：
+**C1. 生成条目**（把 `BlueOcean3214` 换成真的，同时会把 `repository`/`homepage`/`bugs` 写进 `package.json`）：
 
 ```powershell
-node market/prep-catalog-entry.mjs --owner <你的用户名>
+node market/prep-catalog-entry.mjs --owner BlueOcean3214
 ```
 
-产物：`market/submission/<你的用户名>__dsh-handoff-session.yml`，内容形如：
+产物：`market/submission/BlueOcean3214__dsh-handoff-session.yml`，内容形如：
 
 ```yaml
-url: https://github.com/<你的用户名>/dsh-handoff-session
-name: <你的用户名>/dsh-handoff-session
+url: https://github.com/BlueOcean3214/dsh-handoff-session
+name: BlueOcean3214/dsh-handoff-session
 category: session
 description:
   en: 'Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session.'
   zh: 为 DeepSeek Harness 提供会话交接：上下文压力到阈值时写交接文档与可搜索转录，并在新会话里自动继续。
-icon: https://raw.githubusercontent.com/<你的用户名>/dsh-handoff-session/main/assets/icon-180.png
+icon: https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/assets/icon-180.png
 ```
 
 （`description.en` 里有 `: `，所以生成器自动加了引号——不加引号 YAML 会解析失败。）
@@ -103,9 +103,9 @@ git push
 **C3. 提 PR**：
 
 1. 打开 https://github.com/awesome-dsh-plugin/awesome-dsh-plugin → Fork。
-2. 在 fork 里新建文件 `data/plugins/<你的用户名>__dsh-handoff-session.yml`，粘贴上面的内容。
+2. 在 fork 里新建文件 `data/plugins/BlueOcean3214__dsh-handoff-session.yml`，粘贴上面的内容。
 3. Commit → 回到上游仓库页面，点 **Compare & pull request**。
-4. PR 标题：`Add <你的用户名>/dsh-handoff-session`。
+4. PR 标题：`Add BlueOcean3214/dsh-handoff-session`。
 5. PR 正文（简短说明 + 自检，能明显减少来回）：
 
 ```markdown
