@@ -64,7 +64,7 @@ npm 来源会自动去 registry 查该版本的真实发布时间当 `publishTim
 
 ### 托管 + 加源
 
-1. 索引可以直接跟着 npm 包走：`https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`（jsDelivr 读 npm 包里的文件，发布后即可访问，不用另外托管）。也可以放到任意 https 静态地址：GitHub Pages 最省事（仓库 Settings → Pages → Deploy from branch → `/docs` 或根目录，地址形如 `https://<you>.github.io/<repo>/market/index.json`）。
+1. 放进 Git 仓库用 raw 地址：`https://raw.githubusercontent.com/<owner>/<repo>/main/market/index.json`（本项目用的就是这条，`max-age=300`，5 分钟内生效，不需要任何额外服务）。也可以放 GitHub Pages（Settings → Pages → Deploy from branch → `/docs` 或根目录）。要注意 `https://cdn.jsdelivr.net/npm/<pkg>/market/index.json` 虽然能直接用，但 npm 包里的文件不可变、而且 jsDelivr 对不固定版本的路径缓存 12 小时，发新版后索引会滞后，除非每次都用 `@<version>` 固定路径。
 2. DSH 里打开 Plugins → Discover，在 Index sources 里加这个 URL。
 3. 刷新后列表里出现 `会话交接`，点安装即可；装的时候走的是上面那个 `marketInstallTarget`，所以 npm 包必须已经发出来（或 git commit 已经推上去）。
 
@@ -85,22 +85,23 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 已发布：
 
-- npm：`dsh-handoff-session@0.6.0`（2026-11-03，`https://www.npmjs.com/package/dsh-handoff-session`），`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
-- 自托管索引：`https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`（jsDelivr 直接读 npm 包里的文件，返回 200，已用官方校验器验证，`marketInstallTarget` = `dsh-handoff-session@0.6.0`）。
+- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）和 `@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
+- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.6.1`）。
+  - 也试过 `https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`：能用，但 npm 包里的文件不可变，发版后 `publishTimestamp` 只能写预估值；而且 jsDelivr 对 `/npm/<pkg>/` 这种不固定版本的路径缓存 12 小时（回源节点之间还会不一致，`purge.jsdelivr.net` 也不保证立刻全清）。所以索引改由 Git 托管。
 - 包名定为 `dsh-handoff-session`（`dsh-handoff` 已被 `zhijiangtang/dsh-handoff` 占用，而且对方也是会话交接类插件；`dsh-session-handoff`、`dsh-handoff-kit`、`dsh-continuity`、`dsh-session-continuity` 同样被占）。
 - `package.json`：去掉 `private`，补 `license: MIT`、`keywords`、`publishConfig.access: public`；`cordis.patch.yml` 的 `insert.name` 与 `client.js` 的模块 `id` 已同步改名，`client-selftest.mjs` 里的断言也一起改了。
 - 仓库素材：`LICENSE`（MIT）、`.gitignore`（挡住 `.dsh/` 里的对话记录）、`.gitattributes`（统一 LF）、`assets/icon-180.png`（180×180 市场卡片图标）。
-- 公开仓库：**https://github.com/BlueOcean3214/dsh-handoff-session**（2026-11-03 14:20 建仓并推送 `main`，`dsh-plugin` topic 已加，`package.json` 的 `repository` / `homepage` / `bugs` 已指向它；`assets/icon-180.png` 经 raw.githubusercontent 验证返回 200 `image/png`）。
+- 公开仓库：**https://github.com/BlueOcean3214/dsh-handoff-session**（2026-11-03 14:20 建仓并推送 `main`，`dsh-plugin` topic 已加，`package.json` 的 `repository` / `homepage` / `bugs` 已指向它；`assets/icon-180.png` 经 raw.githubusercontent 验证返回 200 `image/png`；`v0.6.1` 标签已推）。
+- 索引生成：`node market/regen-index.mjs`（读 `package.json` 的 name/version，标题描述沿用现有索引，默认调官方校验器；PowerShell 直接传中文参数会被 GBK 拆坏，所以走这个小脚本）。
 
 仍缺：
 
-- npm 包还没和仓库关联：npm 只在 `package.json.repository` 指回收录仓库时才显示下载量。仓库建好后再发一个补丁版（`npm version patch && npm publish`，然后重跑 `node market/build-index.mjs` 并重新发布索引）即可。
 - 官方目录 PR：条目文件已生成在 `market/submission/BlueOcean3214__dsh-handoff-session.yml`，但 CI 要求**仓库创建满 1 天**，最早 2026-11-04 14:20（+08:00）之后才能提。步骤见 [`docs/catalog-submission.md`](docs/catalog-submission.md)。
 - `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
 
-> 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，约 20 秒后 `dist-tags.latest` 才变成 `0.6.0`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。
+> 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。
 >
-> 注意：包内 `market/index.json` 的 `publishTimestamp` 是发布前生成时估的（`1793684204`），仓库里的那份已经用 registry 的真实时间重生成过（`1793685076`）。这个字段只影响市场列表的排序/显示，不影响安装。
+> 注意：npm 包内那份 `market/index.json` 的 `publishTimestamp` 是发布前生成时估的（`1793687327`，差 66 秒），仓库里的那份才是 registry 的真实时间（`1793687393`）。索引现在从 Git 托管，所以以后不用再为此重发版本。
 
 ## 配置
 
