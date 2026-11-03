@@ -27,6 +27,8 @@
 
 ## 步骤 A：建 GitHub 仓库并推上去
 
+> **状态：已完成**（2026-11-03 14:20 +08:00）。仓库 https://github.com/BlueOcean3214/dsh-handoff-session 已建（public）、`main` 已推送、`dsh-plugin` topic 与 About 描述已设。下面保留原始步骤，便于换仓库或重来一次。
+
 这里没有 `gh` 命令行，用网页 + git 推送。
 
 **A1. 本地初始化仓库**（在 `C:\Users\Santuo\Desktop\chajian` 里执行）：

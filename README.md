@@ -89,11 +89,13 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - 自托管索引：`https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`（jsDelivr 直接读 npm 包里的文件，返回 200，已用官方校验器验证，`marketInstallTarget` = `dsh-handoff-session@0.6.0`）。
 - 包名定为 `dsh-handoff-session`（`dsh-handoff` 已被 `zhijiangtang/dsh-handoff` 占用，而且对方也是会话交接类插件；`dsh-session-handoff`、`dsh-handoff-kit`、`dsh-continuity`、`dsh-session-continuity` 同样被占）。
 - `package.json`：去掉 `private`，补 `license: MIT`、`keywords`、`publishConfig.access: public`；`cordis.patch.yml` 的 `insert.name` 与 `client.js` 的模块 `id` 已同步改名，`client-selftest.mjs` 里的断言也一起改了。
-- 仓库素材：`LICENSE`（MIT）、`.gitignore`（挡住 `.dsh/` 里的对话记录）、`assets/icon-180.png`（180×180 市场卡片图标）。
+- 仓库素材：`LICENSE`（MIT）、`.gitignore`（挡住 `.dsh/` 里的对话记录）、`.gitattributes`（统一 LF）、`assets/icon-180.png`（180×180 市场卡片图标）。
+- 公开仓库：**https://github.com/BlueOcean3214/dsh-handoff-session**（2026-11-03 14:20 建仓并推送 `main`，`dsh-plugin` topic 已加，`package.json` 的 `repository` / `homepage` / `bugs` 已指向它；`assets/icon-180.png` 经 raw.githubusercontent 验证返回 200 `image/png`）。
 
-仍缺（不影响 npm 安装，只影响官方目录收录）：
+仍缺：
 
-- 公开 GitHub 仓库：`repository` / `homepage` 字段和 awesome-dsh-plugin 的 PR 都需要它。
+- npm 包还没和仓库关联：npm 只在 `package.json.repository` 指回收录仓库时才显示下载量。仓库建好后再发一个补丁版（`npm version patch && npm publish`，然后重跑 `node market/build-index.mjs` 并重新发布索引）即可。
+- 官方目录 PR：条目文件已生成在 `market/submission/BlueOcean3214__dsh-handoff-session.yml`，但 CI 要求**仓库创建满 1 天**，最早 2026-11-04 14:20（+08:00）之后才能提。步骤见 [`docs/catalog-submission.md`](docs/catalog-submission.md)。
 - `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
 
 > 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，约 20 秒后 `dist-tags.latest` 才变成 `0.6.0`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。
