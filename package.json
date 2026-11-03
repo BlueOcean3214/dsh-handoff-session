@@ -1,6 +1,6 @@
 {
   "name": "dsh-handoff-session",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session.",
   "type": "module",
   "license": "MIT",

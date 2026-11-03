@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": {
-    "en": "Santuo plugins"
+    "en": "[object Object]"
   },
   "metadata": {
     "categories": {
@@ -53,8 +53,8 @@
       },
       "versions": [
         {
-          "version": "0.6.0",
-          "publishTimestamp": 1793685076,
+          "version": "0.6.1",
+          "publishTimestamp": 1793687393,
           "source": {
             "type": "npm"
           },
