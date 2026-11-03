@@ -1,0 +1,54 @@
+{
+  "name": "dsh-handoff-session",
+  "version": "0.6.0",
+  "description": "Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "handoff",
+    "session",
+    "context-pressure",
+    "continuity"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "market/index.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BlueOcean3214/dsh-handoff-session.git"
+  },
+  "homepage": "https://github.com/BlueOcean3214/dsh-handoff-session#readme",
+  "bugs": {
+    "url": "https://github.com/BlueOcean3214/dsh-handoff-session/issues"
+  }
+}

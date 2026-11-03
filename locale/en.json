@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Handoff",
+    "description": "Pressure-aware handoff for long sessions: writes a durable handoff document plus a searchable transcript, opens a fresh Session, and shows context/turn/step health below the composer."
+  }
+}

@@ -1,0 +1,31 @@
+- insert:
+    - id: session-handoff
+      name: 'dsh-handoff-session'
+      config:
+        # Pressure is reassessed on every request. Turn/step thresholds are
+        # absolute session counters; context thresholds are ratios (0..1).
+        turnsWatch: 10
+        turnsSoft: 20
+        turnsUrgent: 30
+        stepsWatch: 250
+        stepsSoft: 500
+        stepsUrgent: 900
+        contextWatch: 0.40
+        contextSoft: 0.60
+        contextUrgent: 0.85
+        # Where handoff documents are written, relative to the session cwd.
+        handoffDir: .dsh/handoffs
+        # Language for the generated document and the new-session prompt.
+        language: zh
+        # End the old turn right after a successful handoff.
+        concludeTurn: true
+        # Let the Client half switch to the fresh Session automatically.
+        autoOpenNewSession: true
+        # Also export a searchable transcript sidecar next to the handoff doc.
+        transcript: true
+        # Hard cap on the transcript size; the middle is elided when exceeded.
+        transcriptMaxChars: 120000
+        # Include model reasoning blocks (usually noisy; default off).
+        transcriptReasoning: false
+        # Include tool call arguments and tool results (the useful evidence).
+        transcriptToolOutput: true

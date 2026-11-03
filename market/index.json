@@ -1,0 +1,66 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Santuo plugins"
+  },
+  "metadata": {
+    "categories": {
+      "session": {
+        "title": {
+          "en": "Sessions & Messages",
+          "zh": "会话与消息"
+        }
+      },
+      "ui": {
+        "title": {
+          "en": "Interface",
+          "zh": "界面"
+        }
+      },
+      "tools": {
+        "title": {
+          "en": "Tools & Integrations",
+          "zh": "工具与集成"
+        }
+      }
+    },
+    "labels": {},
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-handoff-session",
+      "title": {
+        "en": "Session Handoff",
+        "zh": "会话交接"
+      },
+      "description": {
+        "en": "Pressure-aware session handoff: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace.",
+        "zh": "长会话开始降智前自动写交接文档，并在同一工作目录开新会话继续干活；输入框下方带压力提示与“下个会话模式”选择。"
+      },
+      "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0IiBmaWxsPSJub25lIj4KICA8cmVjdCB4PSI0IiB5PSI0IiB3aWR0aD0iNTYiIGhlaWdodD0iNTYiIHJ4PSIxNCIgZmlsbD0iI0VFRjRGRiIvPgogIDxwYXRoIGQ9Ik0yMiAxN2gxNGw3IDd2MTNhNCA0IDAgMCAxLTQgNEgyMmE0IDQgMCAwIDEtNC00VjIxYTQgNCAwIDAgMSA0LTRaIiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMzQjZGRTAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPHBhdGggZD0iTTM2IDE3djdoNyIgc3Ryb2tlPSIjM0I2RkUwIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0yNSAzMWgxME0yNSAzNmg3IiBzdHJva2U9IiM3RkEzRUUiIHN0cm9rZS13aWR0aD0iMi4yIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNDEgMzguNWE5IDkgMCAxIDEtMi42LTYuMyIgc3Ryb2tlPSIjRjA4QTI0IiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTQxIDMwLjV2OGgtOCIgc3Ryb2tlPSIjRjA4QTI0IiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=",
+      "metadata": {
+        "category": "session",
+        "keywords": [
+          "dsh-plugin",
+          "handoff",
+          "session",
+          "context-pressure",
+          "continuity"
+        ],
+        "labels": [],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.6.0",
+          "publishTimestamp": 1793685076,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {}
+        }
+      ]
+    }
+  ]
+}
