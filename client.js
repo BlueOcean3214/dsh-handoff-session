@@ -108,9 +108,13 @@ window.__ModuleLoader__.load({
       },
     }
 
+    // Level colors must stay readable on both themes. Do not use
+    // --dsw-alias-brand-primary here: in the DSH palette it maps to
+    // neutral-bluish-1000 (near black), so the "watch" dot rendered black.
+    // --dsw-static-blue-500 is a raw palette color and is re-declared per theme.
     const LEVEL_COLOR = {
       low: 'var(--dsw-alias-state-success-primary, #16a34a)',
-      watch: 'var(--dsw-alias-brand-primary, #2563eb)',
+      watch: 'var(--dsw-static-blue-500, #3b82f6)',
       recommended: 'var(--dsw-alias-state-warn-primary, #d97706)',
       urgent: 'var(--dsw-alias-state-error-primary, #dc2626)',
     }
@@ -464,12 +468,7 @@ window.__ModuleLoader__.load({
             title: canOpen
               ? `${t('openNew')} · ${view.newSessionId}`
               : `${levelLabel(t, level)} · ${t('context')} ${pct(ratio)} · ${t('turns')} ${turn} · ${t('steps')} ${step}`,
-            style: {
-              color:
-                canOpen || level === 'recommended' || level === 'urgent'
-                  ? accent
-                  : 'var(--dsw-alias-label-secondary, rgba(0,0,0,.55))',
-            },
+            style: { color: accent },
             onClick: canOpen ? openNewSession : () => setOpen((value) => !value),
           },
           h('span', {
@@ -512,7 +511,7 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-bg-layer-2, rgba(0,0,0,.05));
       }
       .dsh-handoff-bar:focus-visible {
-        outline: 2px solid var(--dsw-alias-brand-primary, #2563eb);
+        outline: 2px solid var(--dsw-static-blue-500, #2563eb);
         outline-offset: 1px;
       }
       .dsh-handoff-bar-muted { cursor: default; opacity: .55; }

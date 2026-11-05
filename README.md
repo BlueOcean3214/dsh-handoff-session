@@ -10,7 +10,7 @@ DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，
 2. **动态提示**：每次请求都会在运行时上下文里加入一段 `<session-pressure>`，告诉模型当前压力和 `level`（`low` / `watch` / `recommended` / `urgent`）。
 3. **策略段**：系统提示里加入“会话寿命与交接”规则，明确只在 `recommended` / `urgent` 且处于可持久化检查点时调用工具。
 4. **交接工具**：`session_handoff` 把目标、现状、已完成、待办、决策、关键文件、验证结果写进 `<cwd>/.dsh/handoffs/handoff-<时间>-<会话>.md`，同时在同目录写一份可检索的 `handoff-<时间>-<会话>.transcript.md`；用 `sessionController.create()` 新建会话；用 `sessionController.prompt()` 把“读交接文档 + 继续指令”发过去；最后结束旧回合。新会话只读摘要，缺细节时再按需 `grep` 转录，不会整份塞进上下文。
-5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点颜色跟压力走：绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接（交接中为蓝色脉冲，完成后变回绿色）；文字颜色也同步从次要色变成警告色/品牌色。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
+5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点的颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化（绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接；交接中为琥珀色脉冲，完成后变回绿色），「会话交接」四个字的颜色也跟着同一套等级色走；配色只用 DSH 调色板里真实存在的 token（`--dsw-alias-state-success/warn/error-primary` 与 `--dsw-static-blue-500`），不再用会被解析成近黑色的 `--dsw-alias-brand-primary`。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
 
 新会话不会看到旧对话，所以工具参数里的 `summary` 和 `nextPrompt` 必须是自包含的。
 
@@ -85,8 +85,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 已发布：
 
-- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）、`@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）和 `@0.7.0`（2026-11-05 14:44，新增「会话交接」左侧 6px 压力状态点，颜色顺序绿→蓝→琥珀→红）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
-- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.7.0`）。
+- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）、`@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）、`@0.7.0`（2026-11-05 14:44，新增「会话交接」左侧 6px 压力状态点，颜色顺序绿→蓝→琥珀→红）和 `@0.7.1`（2026-11-05，修掉 watch 档把 `--dsw-alias-brand-primary` 当蓝色用、结果渲染成近黑的问题，改用 `--dsw-static-blue-500`；文字颜色一律跟随等级色；描述文案补上「颜色随压力逐级变化」）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
+- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.7.1`）。
   - 也试过 `https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`：能用，但 npm 包里的文件不可变，发版后 `publishTimestamp` 只能写预估值；而且 jsDelivr 对 `/npm/<pkg>/` 这种不固定版本的路径缓存 12 小时（回源节点之间还会不一致，`purge.jsdelivr.net` 也不保证立刻全清）。所以索引改由 Git 托管。
 - 包名定为 `dsh-handoff-session`（`dsh-handoff` 已被 `zhijiangtang/dsh-handoff` 占用，而且对方也是会话交接类插件；`dsh-session-handoff`、`dsh-handoff-kit`、`dsh-continuity`、`dsh-session-continuity` 同样被占）。
 - `package.json`：去掉 `private`，补 `license: MIT`、`keywords`、`publishConfig.access: public`；`cordis.patch.yml` 的 `insert.name` 与 `client.js` 的模块 `id` 已同步改名，`client-selftest.mjs` 里的断言也一起改了。

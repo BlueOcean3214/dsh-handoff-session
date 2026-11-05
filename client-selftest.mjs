@@ -142,7 +142,7 @@ if (collapsedText.includes('dsh-handoff-badge')) throw new Error('collapsed rend
 if (collapsedText.includes('"dsh-handoff-meta"')) throw new Error('collapsed render must not contain a meta row')
 
 // The collapsed strip carries a small status pip left of the title, coloured by
-// the current pressure level (green healthy / amber watch / blue recommended /
+// the current pressure level (green healthy / blue watch / amber recommended /
 // red urgent, plus pending and done).
 function findPip(node) {
   if (node === null || typeof node !== 'object') return undefined
@@ -172,6 +172,35 @@ const pendingPip = findPip(render({ useProjection: () => ({ ...view, handoffPend
 if (pendingPip?.props['data-level'] !== 'pending') throw new Error('pending handoff must use the pending pip')
 const donePip = findPip(render({ useProjection: () => ({ ...view, handoffSucceeded: true }) }))
 if (donePip?.props['data-level'] !== 'done') throw new Error('completed handoff must use the done pip')
+// Regression guard: --dsw-alias-brand-primary resolves to neutral-bluish-1000
+// (near black) in the DSH light palette, which painted the watch pip black.
+const watchPip = findPip(render({ useProjection: () => ({ ...view, level: 'watch' }) }))
+if (watchPip?.props['data-level'] !== 'watch') throw new Error('watch level must use the watch pip')
+const watchPipColor = String(watchPip?.props.style?.background ?? '')
+if (watchPipColor.includes('brand-primary')) {
+  throw new Error(`watch pip must not use the near-black brand token: ${watchPipColor}`)
+}
+if (!watchPipColor.includes('blue')) throw new Error(`watch pip must be blue: ${watchPipColor}`)
+
+// The label itself is always tinted with the level colour, never a neutral
+// fallback that can render near-black on the dock.
+function findBar(node) {
+  if (node === null || typeof node !== 'object') return undefined
+  const className = node.props?.className
+  if (typeof className === 'string' && className.split(' ').includes('dsh-handoff-bar')) return node
+  const children = node.props?.children ?? node.children
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = findBar(child)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+const collapsedBar = findBar(collapsed)
+if (collapsedBar === undefined) throw new Error('collapsed render missing label button')
+if (typeof collapsedBar.props.style?.color !== 'string') throw new Error('label must carry a level colour')
+if (collapsedBar.props.style.color.includes('label-secondary')) {
+  throw new Error('label must not fall back to the neutral secondary colour')
+}
 
 // Expanded popover (force every useState call: open=true, sent=false, preset=ptc).
 let draft

@@ -40,9 +40,10 @@ const icon = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/asset
 // 仓库里带有 README 的英文摘要时，优先用它，避免两处描述漂移。
 const descriptionEn =
   arg('description-en') ??
-  'Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session.'
+  'Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session. The status pip beside the input box shades from green to blue to amber to red as pressure rises.'
 const descriptionZh =
-  arg('description-zh') ?? '为 DeepSeek Harness 提供会话交接：上下文压力到阈值时写交接文档与可搜索转录，并在新会话里自动继续。'
+  arg('description-zh') ??
+  '为 DeepSeek Harness 提供会话交接：上下文压力到阈值时写交接文档与可搜索转录，并在新会话里自动继续；输入框下方状态点随压力从绿 → 蓝 → 琥珀 → 红逐级变色。'
 
 // YAML 标量：含「: 」、以特殊字符开头、或含 # 时必须加引号（contributing.md 明写的前者）。
 function yamlScalar(value) {

@@ -1,7 +1,7 @@
 {
   "name": "dsh-handoff-session",
-  "version": "0.7.0",
-  "description": "Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session.",
+  "version": "0.7.1",
+  "description": "Pressure-aware session handoff for DeepSeek Harness: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace. A status pip and its label shade from green to blue to amber to red as pressure rises.",
   "type": "module",
   "license": "MIT",
   "keywords": [

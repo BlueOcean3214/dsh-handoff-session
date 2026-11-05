@@ -26,8 +26,8 @@ const defaults = {
   plugin: {
     title: { en: 'Session Handoff', zh: '会话交接' },
     description: {
-      en: 'Pressure-aware session handoff: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace.',
-      zh: '上下文压力到阈值时写交接文档与可搜索转录，并在新会话里继承工作目录继续。',
+      en: 'Pressure-aware session handoff: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace. A status pip and its label shade from green to blue to amber to red as pressure rises.',
+      zh: '长会话降智前自动写交接文档，并在同一工作目录开新会话继续；输入框下方常驻压力提示，状态点与文字颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化。',
     },
   },
 }
