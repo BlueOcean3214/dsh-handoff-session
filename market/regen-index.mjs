@@ -35,13 +35,22 @@ const defaults = {
 const old = existsSync(indexPath) ? JSON.parse(readFileSync(indexPath, 'utf8')) : null
 const oldPlugin = old?.plugins?.find((p) => p.name === pkg.name) ?? old?.plugins?.[0]
 
+// 旧索引的 title 是 { en, zh } 对象，不能直接当命令行参数：字符串化会变成
+// "[object Object]"（0.6.1 的索引标题就是这样坏的）。这里取字段，取不到就用默认值。
+const pickText = (value, fallback) =>
+  typeof value === 'string' && value.trim() !== '' && !value.includes('[object ') ? value : fallback
+
+const indexTitleEn = pickText(old?.title?.en, defaults.title.en)
+const indexTitleZh = pickText(old?.title?.zh, defaults.title.zh)
+
 const args = [
   resolve(here, 'build-index.mjs'),
   '--name', pkg.name,
   '--version', pkg.version,
   '--source', 'npm',
   '--category', 'session',
-  '--index-title', old?.title ?? defaults.title.zh,
+  '--index-title', indexTitleEn,
+  '--index-title-zh', indexTitleZh,
   '--title-en', oldPlugin?.title?.en ?? defaults.plugin.title.en,
   '--title-zh', oldPlugin?.title?.zh ?? defaults.plugin.title.zh,
   '--description-en', oldPlugin?.description?.en ?? defaults.plugin.description.en,

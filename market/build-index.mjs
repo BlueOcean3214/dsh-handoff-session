@@ -24,7 +24,8 @@
  *   --description-en/--description-zh
  *   --category <id>          默认 session
  *   --registry <url>         npm 模式的私有 registry，写进 source.registry
- *   --index-title <文本>     索引标题，默认 Santuo plugins
+ *   --index-title <文本>     索引标题（en），默认 Santuo plugins
+ *   --index-title-zh <文本>  索引标题（zh），默认 Santuo 插件
  *   --out <file>             默认 market/index.json
  *   --dsh-range <range>      engines.dsh；不知道就留空（本机运行时是预发布版，任何 range 都难写对）
  *   --check                  生成后调用官方校验器自查
@@ -96,6 +97,15 @@ function localizedText(en, zh) {
 }
 
 const opts = parseArgs(process.argv.slice(2))
+
+// 参数最终都会变成字符串；JSON 对象被当参数传进来时会静默变成 "[object Object]"
+// 并写进索引标题（0.6.1 的 market/index.json 就是这样坏掉的），所以在这里拦一道。
+for (const [key, value] of Object.entries(opts)) {
+  if (typeof value === 'string' && value.includes('[object ')) {
+    throw new Error(`--${key} 收到的是 "[object Object]"：调用方传了对象而不是字符串（检查 regen-index.mjs 这类包装脚本）。`)
+  }
+}
+
 const sourceType = opts.source ?? 'npm'
 if (sourceType !== 'npm' && sourceType !== 'git') throw new Error(`--source 只能是 npm 或 git：${sourceType}`)
 
@@ -181,7 +191,7 @@ const plugin = {
 
 const index = {
   format: 1,
-  title: localizedText(opts['index-title'] ?? 'Santuo plugins'),
+  title: localizedText(opts['index-title'] ?? 'Santuo plugins', opts['index-title-zh'] ?? 'Santuo 插件'),
   metadata: {
     categories: {
       session: { title: localizedText('Sessions & Messages', '会话与消息') },
