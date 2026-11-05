@@ -141,6 +141,38 @@ if (collapsedText.includes('"dsh-handoff-mark"')) throw new Error('collapsed ren
 if (collapsedText.includes('dsh-handoff-badge')) throw new Error('collapsed render must not contain a badge')
 if (collapsedText.includes('"dsh-handoff-meta"')) throw new Error('collapsed render must not contain a meta row')
 
+// The collapsed strip carries a small status pip left of the title, coloured by
+// the current pressure level (green healthy / amber watch / blue recommended /
+// red urgent, plus pending and done).
+function findPip(node) {
+  if (node === null || typeof node !== 'object') return undefined
+  const className = node.props?.className
+  if (typeof className === 'string' && className.split(' ').includes('dsh-handoff-pip')) return node
+  const children = node.props?.children ?? node.children
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = findPip(child)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+
+const collapsedPip = findPip(collapsed)
+if (collapsedPip === undefined) throw new Error('collapsed render missing status pip')
+if (collapsedPip.props['data-level'] !== 'recommended') {
+  throw new Error(`unexpected pip level: ${String(collapsedPip.props['data-level'])}`)
+}
+if (collapsedPip.props['aria-hidden'] !== 'true') throw new Error('status pip must be aria-hidden')
+if (typeof collapsedPip.props.style?.background !== 'string') throw new Error('status pip missing colour')
+
+const lowPip = findPip(render({ useProjection: () => ({ ...view, level: 'low' }) }))
+if (lowPip?.props['data-level'] !== 'low') throw new Error('healthy level must use the low pip')
+const urgentPip = findPip(render({ useProjection: () => ({ ...view, level: 'urgent' }) }))
+if (urgentPip?.props['data-level'] !== 'urgent') throw new Error('urgent level must use the urgent pip')
+const pendingPip = findPip(render({ useProjection: () => ({ ...view, handoffPending: true }) }))
+if (pendingPip?.props['data-level'] !== 'pending') throw new Error('pending handoff must use the pending pip')
+const donePip = findPip(render({ useProjection: () => ({ ...view, handoffSucceeded: true }) }))
+if (donePip?.props['data-level'] !== 'done') throw new Error('completed handoff must use the done pip')
+
 // Expanded popover (force every useState call: open=true, sent=false, preset=ptc).
 let draft
 stateQueue.push(true, false, 'ptc')

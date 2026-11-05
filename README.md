@@ -10,7 +10,7 @@ DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，
 2. **动态提示**：每次请求都会在运行时上下文里加入一段 `<session-pressure>`，告诉模型当前压力和 `level`（`low` / `watch` / `recommended` / `urgent`）。
 3. **策略段**：系统提示里加入“会话寿命与交接”规则，明确只在 `recommended` / `urgent` 且处于可持久化检查点时调用工具。
 4. **交接工具**：`session_handoff` 把目标、现状、已完成、待办、决策、关键文件、验证结果写进 `<cwd>/.dsh/handoffs/handoff-<时间>-<会话>.md`，同时在同目录写一份可检索的 `handoff-<时间>-<会话>.transcript.md`；用 `sessionController.create()` 新建会话；用 `sessionController.prompt()` 把“读交接文档 + 继续指令”发过去；最后结束旧回合。新会话只读摘要，缺细节时再按需 `grep` 转录，不会整份塞进上下文。
-5. **界面**：`client.js` 在输入框下方右侧只放“会话交接”四个字，不占图标位、不挡内置状态；文字颜色随压力从次要色变成警告色/品牌色。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
+5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点颜色跟压力走：绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接（交接中为蓝色脉冲，完成后变回绿色）；文字颜色也同步从次要色变成警告色/品牌色。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
 
 新会话不会看到旧对话，所以工具参数里的 `summary` 和 `nextPrompt` 必须是自包含的。
 
@@ -85,8 +85,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 已发布：
 
-- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）和 `@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
-- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.6.1`）。
+- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）、`@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）和 `@0.7.0`（2026-11-05 14:44，新增「会话交接」左侧 6px 压力状态点，颜色顺序绿→蓝→琥珀→红）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
+- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.7.0`）。
   - 也试过 `https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`：能用，但 npm 包里的文件不可变，发版后 `publishTimestamp` 只能写预估值；而且 jsDelivr 对 `/npm/<pkg>/` 这种不固定版本的路径缓存 12 小时（回源节点之间还会不一致，`purge.jsdelivr.net` 也不保证立刻全清）。所以索引改由 Git 托管。
 - 包名定为 `dsh-handoff-session`（`dsh-handoff` 已被 `zhijiangtang/dsh-handoff` 占用，而且对方也是会话交接类插件；`dsh-session-handoff`、`dsh-handoff-kit`、`dsh-continuity`、`dsh-session-continuity` 同样被占）。
 - `package.json`：去掉 `private`，补 `license: MIT`、`keywords`、`publishConfig.access: public`；`cordis.patch.yml` 的 `insert.name` 与 `client.js` 的模块 `id` 已同步改名，`client-selftest.mjs` 里的断言也一起改了。
@@ -96,8 +96,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 仍缺：
 
-- 官方目录 PR：条目文件已生成在 `market/submission/BlueOcean3214__dsh-handoff-session.yml`，但 CI 要求**仓库创建满 1 天**，最早 2026-11-04 14:20（+08:00）之后才能提。步骤见 [`docs/catalog-submission.md`](docs/catalog-submission.md)。
-  - 已经安排好自动提交：`market/open-catalog-pr.mjs`（幂等，先查目录/已有 PR，再 fork → 建分支 → 提交条目 → 开 PR，成功后会删掉 token 文件），由 Windows 计划任务 `dsh-handoff-catalog-pr` 在 2026-11-04 14:25 运行，日志写 `.dsh/catalog-pr.log`。手动补跑：`node market/open-catalog-pr.mjs`（`--dry-run` 只检查条件）。
+- 官方目录 PR：**#11897 已于 2026-11-04 00:56（+08:00）合并**，条目 `data/plugins/BlueOcean3214__dsh-handoff-session.yml` 已进 `awesome-dsh-plugin`；官方「发现」页与 `dsh-market` 面板（`https://awesome-dsh-plugin.com/plugins.json`）都能搜到，详情页 `https://awesome-dsh-plugin.com/p/BlueOcean3214/dsh-handoff-session/`。后续改标题/分类直接给该 YAML 提小 PR 即可，不用重发 npm。
+- `screenshots.json`（可选）：仓库根放 1–8 张截图能让详情页更好看，需要真实界面截图后再加。
 - `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
 
 > 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。

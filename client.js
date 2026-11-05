@@ -110,8 +110,8 @@ window.__ModuleLoader__.load({
 
     const LEVEL_COLOR = {
       low: 'var(--dsw-alias-state-success-primary, #16a34a)',
-      watch: 'var(--dsw-alias-state-warn-primary, #d97706)',
-      recommended: 'var(--dsw-alias-brand-primary, #2563eb)',
+      watch: 'var(--dsw-alias-brand-primary, #2563eb)',
+      recommended: 'var(--dsw-alias-state-warn-primary, #d97706)',
       urgent: 'var(--dsw-alias-state-error-primary, #dc2626)',
     }
 
@@ -276,6 +276,15 @@ window.__ModuleLoader__.load({
       const accent = succeeded ? LEVEL_COLOR.low : LEVEL_COLOR[level] ?? LEVEL_COLOR.low
       const canOpen = succeeded && typeof view?.newSessionId === 'string' && view.newSessionId !== ''
       const statusLabel = succeeded ? t('done') : pending ? t('handoff') : levelLabel(t, level)
+      // The pip mirrors the popover dot so the collapsed strip carries the same
+      // signal without needing a word: green = healthy, blue = watch,
+      // amber = recommended, red = urgent.
+      const pipLevel = succeeded ? 'done' : pending ? 'pending' : level
+      const pipColor = succeeded
+        ? LEVEL_COLOR.low
+        : pending
+          ? LEVEL_COLOR.recommended
+          : LEVEL_COLOR[level] ?? LEVEL_COLOR.low
 
       const requestHandoff = React.useCallback(() => {
         if (inputActions === undefined || succeeded) return
@@ -316,6 +325,7 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'dsh-handoff-bar dsh-handoff-bar-muted', title: t('noData') },
+            h('span', { className: 'dsh-handoff-pip dsh-handoff-pip-muted', 'aria-hidden': 'true' }),
             h('span', { className: 'dsh-handoff-title' }, t('title')),
           ),
         )
@@ -462,6 +472,12 @@ window.__ModuleLoader__.load({
             },
             onClick: canOpen ? openNewSession : () => setOpen((value) => !value),
           },
+          h('span', {
+            className: 'dsh-handoff-pip',
+            'data-level': pipLevel,
+            'aria-hidden': 'true',
+            style: { background: pipColor },
+          }),
           h('span', { className: 'dsh-handoff-title' }, canOpen ? t('openNew') : t('title')),
         ),
       )
@@ -506,6 +522,28 @@ window.__ModuleLoader__.load({
         line-height: 18px;
         white-space: nowrap;
       }
+      .dsh-handoff-pip {
+        display: inline-block;
+        flex: 0 0 auto;
+        width: 6px;
+        height: 6px;
+        margin-right: 6px;
+        border-radius: 999px;
+        background: var(--dsw-alias-state-success-primary, #16a34a);
+      }
+      .dsh-handoff-pip[data-level="recommended"],
+      .dsh-handoff-pip[data-level="urgent"],
+      .dsh-handoff-pip[data-level="pending"] {
+        animation: dsh-handoff-pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes dsh-handoff-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .55; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dsh-handoff-pip { animation: none !important; }
+      }
+      .dsh-handoff-pip-muted { background: var(--dsw-alias-label-tertiary, rgba(0,0,0,.28)); }
       .dsh-handoff-pop {
         position: absolute;
         right: 0;
