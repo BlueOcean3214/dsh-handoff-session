@@ -1,6 +1,6 @@
 # Session Handoff（会话交接）
 
-DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，让模型自己判断一个合适的收尾点，写出交接文档，并在同一工作目录里自动开一个新会话继续干活。
+DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，让模型自己判断一个合适的收尾点，写出交接文档，并在同一工作目录里自动开一个新会话继续干活。旧会话的子智能体会一起迁移：还在跑的先打断，没做完的任务写成自包含的接手提示词，由新会话重新派出子智能体接着做。
 
 它替代的手工流程是：让模型写交接文档 → 点“下一步” → 复制提示词 → 新建会话 → 粘贴。现在只需要模型调用一次 `session_handoff`。
 
@@ -9,7 +9,7 @@ DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，
 1. **压力投影**：折叠每个会话的 `turn/start`、`step/start`、`request/context`、`assistant/message`、`tool/call`、`tool/result` 事件，得到轮数、步数、上下文占用、累计 token、缓存命中率。
 2. **动态提示**：每次请求都会在运行时上下文里加入一段 `<session-pressure>`，告诉模型当前压力和 `level`（`low` / `watch` / `recommended` / `urgent`）。
 3. **策略段**：系统提示里加入“会话寿命与交接”规则，明确只在 `recommended` / `urgent` 且处于可持久化检查点时调用工具。
-4. **交接工具**：`session_handoff` 把目标、现状、已完成、待办、决策、关键文件、验证结果写进 `<cwd>/.dsh/handoffs/handoff-<时间>-<会话>.md`，同时在同目录写一份可检索的 `handoff-<时间>-<会话>.transcript.md`；用 `sessionController.create()` 新建会话；用 `sessionController.prompt()` 把“读交接文档 + 继续指令”发过去；最后结束旧回合。新会话只读摘要，缺细节时再按需 `grep` 转录，不会整份塞进上下文。
+4. **交接工具**：`session_handoff` 把目标、现状、已完成、待办、决策、关键文件、验证结果写进 `<cwd>/.dsh/handoffs/handoff-<时间>-<会话>.md`，同时在同目录写一份可检索的 `handoff-<时间>-<会话>.transcript.md`；还会快照旧会话的子智能体（默认打断仍在跑的），把它们的任务和进度写进文档，并给每个没跑完的子智能体生成一段自包含的“接手提示词”，让新会话用自带 `subagent` 工具重新派出；随后用 `sessionController.create()` 新建会话；用 `sessionController.prompt()` 把“读交接文档 + 继续指令”发过去；最后结束旧回合。新会话只读摘要，缺细节时再按需 `grep` 转录，不会整份塞进上下文。
 5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点的颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化（绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接；交接中为琥珀色脉冲，完成后变回绿色），「会话交接」四个字的颜色也跟着同一套等级色走；配色只用 DSH 调色板里真实存在的 token（`--dsw-alias-state-success/warn/error-primary` 与 `--dsw-static-blue-500`），不再用会被解析成近黑色的 `--dsw-alias-brand-primary`。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
 
 新会话不会看到旧对话，所以工具参数里的 `summary` 和 `nextPrompt` 必须是自包含的。
@@ -121,6 +121,10 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 | `transcriptMaxChars` | `120000` | 转录字符上限，超出时省略中段 |
 | `transcriptReasoning` | `false` | 是否把模型 reasoning 也写进转录 |
 | `transcriptToolOutput` | `true` | 是否把工具参数和工具结果写进转录 |
+| `subagents` | `interrupt` | 子智能体处理方式：`off` 忽略 / `keep` 只记录 / `interrupt` 记录并打断仍在跑的 |
+| `subagentTakeover` | `true` | 给每个未完成子智能体生成接手提示词，交给新会话重新派出 |
+| `subagentMaxItems` | `8` | 详细记录多少个直接子智能体（0–50） |
+| `subagentChars` | `900` | 子智能体任务/进度每段最多保留多少字符（200–8000） |
 
 默认值参考了用户截图里的 `22 轮 / 677 步 / 24%`：这个状态会落在 `recommended`，模型会在下一个干净检查点交接，而不是每轮都打扰。
 
@@ -133,6 +137,17 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - 超过 `transcriptMaxChars` 时保留开头 25% 和结尾 75%，中间标注省略；
 - 文件里可能含命令输出、文件内容等敏感信息，交接目录应按项目需要清理或加入 `.gitignore`。
 
+### 子智能体交接
+
+交接时 Host 会调用 `subagents.listDescendants(sessionId)`，取这个会话名下的子智能体会话：
+
+- 只详细读 **直接子级**（`depth: 1`），最多 `subagentMaxItems` 个；更深的孙级只统计 running 数、不单独成节，因为它们的任务属于各自父级。
+- 每个子智能体记下：标签、会话 id、模式（`continuable` / `one-shot` / …）、交接时状态（running / inactive）、原任务（第一条人类 user/message）、最近进展（最后一条助手正文）、最后调用的工具、轮次/步数、最后回合是否 `completed`。
+- `subagents: interrupt` 时，对所有仍在 running 的后代调用 `subagents.interrupt(id, authority)`（父 Agent 在线用 `{kind:'ancestor', agent}`，否则用 `{kind:'user', parentSessionId}`）。这是 fire-and-forget：工具只保证“已发出打断请求”，不等待子会话真正停下。
+- 新会话**无法给旧子智能体发消息**（旧子级挂在旧父会话下），所以续接提示里附 `## 子智能体接手`：每个未完成子智能体一段 fenced 的接手提示词（原任务、已做进度、最后工具、核对现状/只补缺口的步骤），由新会话用自带 `subagent` 工具重新派出。已 `completed` 的子智能体只进文档，不进接手清单。
+- 子智能体日志读失败只记 warning，不阻塞交接；读不到内容时文档仍列会话 id 和状态。
+- `subagentTakeover: false` 只写文档、不生成接手提示词；`subagents: off` 完全不碰子智能体。
+
 ## 已验证
 
 - `node --check index.js` 通过，`node selftest.mjs` 输出 `selftest: ok`。
@@ -144,6 +159,7 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - `Slots.listSubTree` 已确认：刷新后 `conversation.composer.dock` 出现 `session-handoff`（order 2，active），与内置 `activity`/`usage` 并列。
 - 真实 GUI（desktop profile，0.5.1 时代验证；当前已升到 0.6.0 并改名为 `dsh-handoff-session`）已由用户确认：`Ctrl+R` 刷新后“会话交接”入口可见，弹层里“下个会话模式”下拉框列出 `标准` / `PTC` / `极简` / `创造` 并能选中“创造模式”；`plugin_manager list_plugins` 同时显示 `include:preset-standard` / `preset-ptc` / `preset-minimal` / `preset-cordis` 均 active，`include:session-handoff` active。
 - 真实 GUI 已确认自动跳转有效：交接后界面自动切到新会话，无需手动点“打开新会话”。选中“创造模式”后交接文档头部记 `Agent 预设: cordis`，新会话的工具集里也确实带 `cordis_inspect_*`（Agent Teams 同样可用），说明下拉选择按 `提示词 → agentPreset → 创建请求` 全链路生效。
+- 子智能体交接（0.8.0）在真实 GUI 里跑过一遍：旧会话派出 `quick`（已完成）与 `slow`（`Start-Sleep -Seconds 600`）两个子智能体后立即交接；交接文档出现 `## 子智能体 (2/2)`，`slow` 状态为“交接时仍在运行，已请求打断”；续接提示里出现 `## 子智能体接手` 与 `slow` 的自包含接手提示（原任务、已有进度、最后工具）。此时 `slow` 的后台作业在交接瞬间被 `kill`（会话日志 `status: killed`，`turn/end: aborted`），600 秒后也没有写出 `slow-done.txt`，进程表无残留。
 
 > 工具列表是按回合生成的：安装/启用插件后，当前这一回合不会立刻多出 `session_handoff`，下一回合（或新会话）才会出现。这是正常现象。
 
@@ -156,6 +172,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - 指定的 agent preset 不存在或已损坏时，创建新会话会失败；交接文档已经写好并保留，工具错误里带文档路径。
 - 创建新会话或发送续接提示失败时，工具返回错误并保留交接文档路径，方便重试。
 - 转录写入失败不会阻塞交接：文档照常生成，工具结果的 `transcriptPath` 为 `null`，Host 日志里有 warning。
+- 子智能体只快照交接那一刻的状态；打断是“发请求不等待”，旧子智能体可能还会跑完当前一步才停。新会话拿到的是任务与进度摘要，不是旧子会话本身；它必须用 `subagent` 重新派出，旧子智能体的完整日志仍可从侧边栏进入。
+- 子智能体日志读失败、`subagents` 服务不存在时交接照常进行：文档里不出现子智能体小节或只列会话 id，工具结果的 `subagents.available` 为 `false`。
 - 旧会话不会自动删除；它保留完整记录，用户可以在侧边栏手动归档。
 - 交接成功后，Client 半默认自动切到新会话；`autoOpenNewSession: false` 可以关掉自动跳转，状态栏会保留“打开新会话”按钮。若前端没有加载 Client 半，仍可从侧边栏进入新会话，工具结果里也写明了新会话 id 和文档路径。
 
@@ -171,5 +189,6 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 4. 交接完成后界面应自动切到新会话（`autoOpenNewSession: false` 时留在原地，状态栏出现“打开新会话”）；手动点状态栏的“打开新会话”也应能切过去。
 5. 在新会话里追一句“上一轮那个命令的完整输出是什么”，它应该去 `grep` 转录文件，而不是说“看不到旧对话”。
 6. 把阈值临时调低（例如 `turnsSoft: 1`）可以看到“会话交接”四个字从次要色变成警告色，`<session-pressure>` 也同步变化。
+7. 子智能体验证：让旧会话用 `subagent` 派一个耗时任务，在它还在跑时交接。交接文档应有 `## 子智能体` 小节，续接提示应有 `## 子智能体接手`；新会话应能用 `subagent` 按提示词重新派出，且旧会话侧边栏里的子会话状态变为已打断/已结束。
 
 > 本机没有可用的 Electron 浏览器（`dsh_browser_open` 报 browser provider unavailable），界面视觉验证由用户在真实桌面窗口里手工完成；`session-handoff` 占位已用 Client 的 `Slots.listSubTree` 确认 active。刷新后若状态栏仍不出现，先看浏览器控制台是否有 Client 半的加载错误。

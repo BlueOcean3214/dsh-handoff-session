@@ -48,6 +48,48 @@ const session = {
   },
 }
 
+// Subagent fixtures: one still running, one finished, one that stopped
+// unfinished, and a grandchild that must not get its own handoff entry.
+const subagentLogs = {
+  'child-running': [
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Refactor the parser module.\nYour parent agent id is "session-parent". Before you finish, send your result to that agent with send_message({ agent_id: "session-parent", message: "<self-contained result>" }). The parent shares your workspace but does not automatically receive your transcript.' }] } },
+    { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Parser split is done; one edge case still fails.' }] } } },
+    { type: 'tool/call', data: { name: 'read' } },
+    { type: 'tool/call', data: { name: 'bash' } },
+    { type: 'turn/end', data: { reason: { kind: 'interrupted' } } },
+  ],
+  'child-done': [
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Write the CHANGELOG entry.' }] } },
+    { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'CHANGELOG updated and verified.' }] } } },
+    { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ],
+  'child-failed': [
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Run the benchmark suite.' }] } },
+    { type: 'turn/end', data: { reason: { kind: 'error' } } },
+  ],
+  grandchild: [
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'nested work that belongs to its parent' }] } },
+  ],
+}
+const interrupted = []
+let subagentAvailable = true
+let subagentReadFails = false
+const subagents = {
+  async listDescendants(rootSessionId) {
+    assert.equal(rootSessionId, 'old-session-1')
+    return [
+      { id: 'child-running', createdAt: 1, mode: 'continuable', label: 'builder', kind: 'child', hasChildren: true, parentId: 'old-session-1', depth: 1, activity: 'running' },
+      { id: 'child-done', createdAt: 2, mode: 'continuable', label: 'scribe', kind: 'child', hasChildren: false, parentId: 'old-session-1', depth: 1, activity: 'inactive' },
+      { id: 'child-failed', createdAt: 3, mode: 'continuable', kind: 'child', hasChildren: false, parentId: 'old-session-1', depth: 1, activity: 'inactive' },
+      { id: 'grandchild', createdAt: 4, mode: 'continuable', label: 'nested', kind: 'child', hasChildren: false, parentId: 'child-running', depth: 2, activity: 'running' },
+    ]
+  },
+  interrupt(id, authority) {
+    interrupted.push({ id, authority })
+  },
+}
+
 const ctx = {
   effect(setup) {
     const disposer = setup()
@@ -94,6 +136,10 @@ const ctx = {
         persisted: persistedSessions.has(id),
       }))
     },
+    async readSession(sessionId) {
+      if (subagentReadFails && sessionId === 'child-failed') throw new Error('corrupt subagent log')
+      return { session: { id: sessionId }, inheritedEventCount: 0, events: subagentLogs[sessionId] ?? [] }
+    },
   },
   sessionPersistence: {
     async stat(sessionId) {
@@ -103,6 +149,7 @@ const ctx = {
   get(name) {
     if (name === 'sessionQuery' && queryAvailable) return ctx.sessionQuery
     if (name === 'sessionPersistence' && persistenceAvailable) return ctx.sessionPersistence
+    if (name === 'subagents' && subagentAvailable) return subagents
     return undefined
   },
   sessionController: {
@@ -134,6 +181,8 @@ assert.ok(pressureContext, 'pressure context registered')
 assert.equal(tool.name, 'session_handoff')
 assert.ok(tool.output.schema.properties.transcriptPath, 'output schema declares transcriptPath')
 assert.ok(tool.output.schema.required.includes('transcriptPath'), 'output schema requires transcriptPath')
+assert.ok(tool.output.schema.properties.subagents, 'output schema declares subagents')
+assert.ok(tool.output.schema.required.includes('subagents'), 'output schema requires subagents')
 assert.deepEqual(tool.output.presentationMeta({}, { newSessionId: 'new-session-1', handoffPath: 'x', transcriptPath: 'y' }), {
   newSessionId: 'new-session-1',
   handoffPath: 'x',
@@ -224,6 +273,28 @@ assert.match(markdown, /## 继续指令/)
 assert.match(markdown, /## 完整转录/)
 assert.match(markdown, /````text/, 'fence grows past inner backticks')
 
+// Subagents: the running direct child and the failed one are handed over; the
+// completed one is documented but not respawned; the grandchild is not detailed.
+assert.deepEqual(result.subagents, { available: true, total: 3, running: 2, interrupted: 2, takeover: 2, omitted: 0 })
+assert.match(markdown, /## 子智能体 \(3\/3\)/)
+assert.match(markdown, /Refactor the parser module\./)
+assert.doesNotMatch(markdown, /Your parent agent id/, 'old parent delivery boilerplate is stripped')
+assert.match(markdown, /Write the CHANGELOG entry\./)
+assert.match(markdown, /Parser split is done; one edge case still fails\./)
+assert.match(markdown, /交接时仍在运行/)
+assert.match(markdown, /Run the benchmark suite\./)
+assert.doesNotMatch(markdown, /nested work that belongs to its parent/)
+assert.equal(interrupted.length, 2, 'both running descendants were interrupted')
+assert.deepEqual(interrupted.map((entry) => entry.id).sort(), ['child-running', 'grandchild'])
+assert.equal(interrupted[0].authority.kind, 'ancestor')
+
+const continuationText = promptedRequest.content[0].text
+assert.match(continuationText, /## 子智能体接手/)
+assert.match(continuationText, /你接替旧会话里一个尚未完成的子智能体任务/)
+assert.match(continuationText, /Refactor the parser module\./)
+assert.match(continuationText, /Run the benchmark suite\./)
+assert.doesNotMatch(continuationText, /Write the CHANGELOG entry\./, 'completed subagent is not handed over')
+
 const transcript = await readFile(result.transcriptPath, 'utf8')
 assert.match(transcript, /Please ship the handoff plugin/)
 assert.match(transcript, /Installing the bundle now/)
@@ -236,6 +307,7 @@ const again = await tool.execute(
 )
 assert.equal(again.status, 'reused')
 assert.equal(again.newSessionId, 'new-session-1')
+assert.deepEqual(again.subagents, { available: false, total: 0, running: 0, interrupted: 0, takeover: 0, omitted: 0 })
 
 // forceNew bypasses reuse even when the recorded Session is still durable.
 const forced = await tool.execute(
@@ -321,6 +393,16 @@ assert.equal(chosenMode.status, 'created')
 assert.equal(chosenMode.newSessionId, 'new-session-7')
 assert.equal(createdRequest.agentPreset, 'ptc')
 assert.match(await readFile(chosenMode.handoffPath, 'utf8'), /- Agent 预设: `ptc`/)
+
+// A corrupt subagent log is warned about, never fatal: the handoff still lands.
+subagentReadFails = true
+const unreadable = await tool.execute(
+  { summary: 'unreadable subagent', nextPrompt: 'unreadable subagent', forceNew: true },
+  { agent: { session }, signal: new AbortController().signal, concludeTurn() {} },
+)
+assert.equal(unreadable.status, 'created')
+assert.match(await readFile(unreadable.handoffPath, 'utf8'), /## 子智能体/)
+subagentReadFails = false
 
 for (const dispose of cleanup.reverse()) dispose?.()
 await rm(temp, { recursive: true, force: true })

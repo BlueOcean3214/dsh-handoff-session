@@ -29,3 +29,13 @@
         transcriptReasoning: false
         # Include tool call arguments and tool results (the useful evidence).
         transcriptToolOutput: true
+        # Snapshot the session's subagents at handoff time: off = ignore them,
+        # keep = document only, interrupt = also stop the ones still running.
+        subagents: interrupt
+        # Append a self-contained resume prompt per unfinished subagent so the
+        # fresh Session can respawn it with its own `subagent` tool.
+        subagentTakeover: true
+        # How many direct children are documented in detail (0..50).
+        subagentMaxItems: 8
+        # Per-field character cap for a subagent's task/progress excerpt.
+        subagentChars: 900

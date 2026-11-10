@@ -40,7 +40,13 @@ const DEFAULTS = Object.freeze({
   transcriptMaxChars: 120000,
   transcriptReasoning: false,
   transcriptToolOutput: true,
+  subagents: 'interrupt',
+  subagentTakeover: true,
+  subagentMaxItems: 8,
+  subagentChars: 900,
 })
+
+const SUBAGENT_MODES = new Set(['off', 'keep', 'interrupt'])
 
 const LEVEL_RANK = { low: 0, watch: 1, recommended: 2, urgent: 3 }
 
@@ -65,6 +71,24 @@ const LABELS = {
     transcriptHint: '需要核对细节时按需检索该文件（read/grep），不要整份读入上下文',
     next: '继续指令',
     empty: '（未提供）',
+    subagents: '子智能体',
+    subagentId: '会话',
+    subagentMode: '类型',
+    subagentStatus: '状态',
+    subagentProgress: '最近进度',
+    subagentTask: '任务',
+    subagentTools: '最后的工具',
+    subagentTurns: '轮次 / 步数',
+    subagentRunning: '交接时仍在运行',
+    subagentInterruptRequested: '交接时仍在运行，已请求打断',
+    subagentInterruptFailed: '交接时仍在运行，打断请求失败',
+    subagentInactive: '交接时已停止',
+    subagentOmitted: '另有 {n} 个子智能体未列出（超过 subagentMaxItems）。',
+    subagentUnavailable: '未能读取子智能体列表',
+    subagentTakeoverTitle: '子智能体接手',
+    subagentTakeoverIntro: '旧会话在交接时还有 {n} 个子智能体没有完成。新会话不能直接给它们发消息，请用 `subagent` 工具按下面的自包含提示重新派出，让新子智能体接着做；若这些任务已经不需要，或当前工具集里没有 `subagent`，先说明再跳过。',
+    subagentTakeoverDone: '旧会话的子智能体都已完成，无需重新派出（明细见交接文档）。',
+    subagentResumeHeading: 'resume prompt',
   },
   en: {
     title: 'Session Handoff',
@@ -86,6 +110,24 @@ const LABELS = {
     transcriptHint: 'Read or grep this file on demand; do not load it whole into context',
     next: 'Continuation prompt',
     empty: '(not provided)',
+    subagents: 'Subagents',
+    subagentId: 'Session',
+    subagentMode: 'Mode',
+    subagentStatus: 'Status',
+    subagentProgress: 'Latest progress',
+    subagentTask: 'Task',
+    subagentTools: 'Last tools',
+    subagentTurns: 'Turns / steps',
+    subagentRunning: 'still running at handoff',
+    subagentInterruptRequested: 'still running at handoff; interrupt requested',
+    subagentInterruptFailed: 'still running at handoff; interrupt request failed',
+    subagentInactive: 'stopped at handoff',
+    subagentOmitted: '{n} more subagents are not listed (subagentMaxItems).',
+    subagentUnavailable: 'Could not read the subagent list',
+    subagentTakeoverTitle: 'Subagent takeover',
+    subagentTakeoverIntro: 'At handoff the old Session had {n} unfinished subagent(s). The fresh Session cannot message them directly; re-dispatch each one with the `subagent` tool using the self-contained resume prompt below so a new subagent continues the work. If those tasks are no longer needed, or this toolset has no `subagent` tool, say so before skipping them.',
+    subagentTakeoverDone: 'All subagents from the old Session had finished; nothing needs re-dispatching (details are in the handoff document).',
+    subagentResumeHeading: 'resume prompt',
   },
 }
 
@@ -112,6 +154,9 @@ function normalizeConfig(raw) {
   const contextWatch = clamp(finite(input.contextWatch, DEFAULTS.contextWatch), 0, 1)
   const contextSoft = clamp(Math.max(contextWatch, finite(input.contextSoft, DEFAULTS.contextSoft)), 0, 1)
   const contextUrgent = clamp(Math.max(contextSoft, finite(input.contextUrgent, DEFAULTS.contextUrgent)), 0, 1)
+  const subagentMode = SUBAGENT_MODES.has(String(input.subagents ?? '').toLowerCase())
+    ? String(input.subagents).toLowerCase()
+    : DEFAULTS.subagents
   return {
     turnsWatch,
     turnsSoft,
@@ -130,6 +175,10 @@ function normalizeConfig(raw) {
     transcriptMaxChars: clamp(finite(input.transcriptMaxChars, DEFAULTS.transcriptMaxChars), 10000, 2000000),
     transcriptReasoning: input.transcriptReasoning === true,
     transcriptToolOutput: input.transcriptToolOutput !== false,
+    subagents: subagentMode,
+    subagentTakeover: input.subagentTakeover !== false,
+    subagentMaxItems: Math.round(clamp(finite(input.subagentMaxItems, DEFAULTS.subagentMaxItems), 0, 50)),
+    subagentChars: Math.round(clamp(finite(input.subagentChars, DEFAULTS.subagentChars), 200, 8000)),
   }
 }
 
@@ -221,6 +270,8 @@ Before calling, fill the handoff completely: goal, current state, completed work
 
 When the handoff request names a next-Session mode (for example \`agentPreset: "ptc"\`), pass that exact id as the \`agentPreset\` argument. Omit \`agentPreset\` only when the request says to inherit the current mode.
 
+${config.subagents === 'off' ? '' : `The handoff also snapshots this Session's subagents into the document. With \`subagents: "${config.subagents}"\`, still-running ones are ${config.subagents === 'interrupt' ? 'interrupted (fire-and-forget) so they stop spending tokens' : 'left running'}; the fresh Session receives a self-contained resume prompt for each unfinished subagent and respawns it with its own \`subagent\` tool. Do not rely on the fresh Session being able to message the old children directly.`}
+
 Current thresholds: recommended at turn ${config.turnsSoft}, step ${config.stepsSoft}, or context ${Math.round(config.contextSoft * 100)}%; urgent at turn ${config.turnsUrgent}, step ${config.stepsUrgent}, or context ${Math.round(config.contextUrgent * 100)}%.`
 }
 
@@ -259,6 +310,289 @@ function contentText(content, maximum) {
     }
   }
   return shorten(parts.join('\n').trim(), maximum)
+}
+
+/** Render multi-line text as a Markdown blockquote. */
+function quoteBlock(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join('\n')
+}
+
+/**
+ * Drop the delivery boilerplate the host appends to a delegated prompt
+ * ("Your parent agent id is ... send_message ..."). It describes the old
+ * parent, so it is noise for the successor.
+ */
+function stripParentBoilerplate(text) {
+  return String(text ?? '')
+    .replace(/\n\s*Your parent agent id is\b[\s\S]*$/i, '')
+    .trim()
+}
+
+/**
+ * Fold one subagent Session log into the pieces a successor needs: the original
+ * task, the latest assistant progress, the last tools, and whether its final
+ * turn actually completed.
+ */
+function summarizeSubagentEvents(events, maximum) {
+  let task = ''
+  let progress = ''
+  let lastTurnReason
+  let turns = 0
+  let steps = 0
+  let lastTime = 0
+  const tools = []
+  for (const event of Array.isArray(events) ? events : []) {
+    const type = event?.type
+    const data = event?.data ?? {}
+    const time = Number(event?.time)
+    if (Number.isFinite(time)) lastTime = Math.max(lastTime, time)
+    if (type === 'turn/start') {
+      turns = Math.max(turns, Number(data.turn) || 0)
+      continue
+    }
+    if (type === 'step/start') {
+      steps += 1
+      continue
+    }
+    if (type === 'user/message') {
+      // The first genuine user message is the task the parent handed over.
+      if (data.source?.kind !== 'user') continue
+      if (task === '') task = stripParentBoilerplate(contentText(data.content, maximum))
+      continue
+    }
+    if (type === 'assistant/message') {
+      const text = stripParentBoilerplate(contentText(data.message?.content, maximum))
+      if (text !== '') progress = text
+      continue
+    }
+    if (type === 'tool/call') {
+      const name = typeof data.name === 'string' ? data.name : ''
+      if (name !== '' && tools[tools.length - 1] !== name) {
+        tools.push(name)
+        if (tools.length > 6) tools.shift()
+      }
+      continue
+    }
+    if (type === 'turn/end') {
+      lastTurnReason = data.reason?.kind
+    }
+  }
+  return { task, progress, tools, turns, steps, lastTime, lastTurnReason }
+}
+
+/**
+ * Snapshot the Session's subagents for the handoff.
+ *
+ * Only direct children are read in detail (deeper descendants belong to their
+ * parent's task); every still-running descendant is interrupted when the
+ * `interrupt` mode is active. The fresh Session cannot message these children
+ * directly, so it receives self-contained resume prompts instead.
+ */
+async function collectSubagents(ctx, session, config, agent) {
+  const report = {
+    available: false,
+    error: undefined,
+    total: 0,
+    running: 0,
+    interruptRequested: 0,
+    interruptFailed: 0,
+    omitted: 0,
+    items: [],
+  }
+  if (config.subagents === 'off') return report
+  const service = typeof ctx.get === 'function' ? ctx.get('subagents') : ctx.subagents
+  if (service === undefined || typeof service.listDescendants !== 'function') return report
+  report.available = true
+
+  let rows
+  try {
+    rows = await service.listDescendants(session.id)
+  } catch (error) {
+    report.error = String(error)
+    ctx.logger?.warn?.(`session_handoff could not list subagents: ${String(error)}`)
+    return report
+  }
+
+  const children = (Array.isArray(rows) ? rows : []).filter(
+    (row) => row !== null && typeof row === 'object' && row.kind === 'child' && typeof row.id === 'string' && row.id !== '',
+  )
+  report.running = children.filter((row) => row.activity === 'running').length
+
+  let direct = children.filter((row) => (row.depth ?? 1) === 1)
+  // Hosts that report a flat child list without depth still deserve a snapshot.
+  if (direct.length === 0) direct = children
+  report.total = direct.length
+  report.omitted = Math.max(0, direct.length - config.subagentMaxItems)
+  const chosen = config.subagentMaxItems > 0 ? direct.slice(0, config.subagentMaxItems) : []
+
+  const query = typeof ctx.get === 'function' ? ctx.get('sessionQuery') : ctx.sessionQuery
+  for (const row of chosen) {
+    let summary = { task: '', progress: '', tools: [], turns: 0, steps: 0, lastTime: 0, lastTurnReason: undefined }
+    if (query !== undefined && typeof query.readSession === 'function') {
+      try {
+        const snapshot = await query.readSession(row.id)
+        summary = summarizeSubagentEvents(snapshot?.events, config.subagentChars)
+      } catch (error) {
+        ctx.logger?.warn?.(`session_handoff could not read subagent ${row.id}: ${String(error)}`)
+      }
+    }
+    const item = {
+      id: row.id,
+      label: typeof row.label === 'string' && row.label.trim() !== '' ? row.label.trim() : undefined,
+      mode: typeof row.mode === 'string' ? row.mode : 'unknown',
+      depth: row.depth ?? 1,
+      parentId: typeof row.parentId === 'string' ? row.parentId : undefined,
+      activity: row.activity === 'running' ? 'running' : 'inactive',
+      interruptRequested: false,
+      interruptError: undefined,
+      ...summary,
+    }
+    item.unfinished = item.activity === 'running' || item.lastTurnReason !== 'completed' || item.progress === ''
+    report.items.push(item)
+  }
+
+  if (config.subagents === 'interrupt') {
+    for (const row of children.filter((entry) => entry.activity === 'running')) {
+      const item = report.items.find((entry) => entry.id === row.id)
+      try {
+        service.interrupt(
+          row.id,
+          agent !== undefined
+            ? { kind: 'ancestor', agent }
+            : { kind: 'user', parentSessionId: session.id },
+        )
+        report.interruptRequested += 1
+        if (item !== undefined) item.interruptRequested = true
+      } catch (error) {
+        report.interruptFailed += 1
+        if (item !== undefined) item.interruptError = String(error)
+        ctx.logger?.warn?.(`session_handoff could not interrupt subagent ${row.id}: ${String(error)}`)
+      }
+    }
+  }
+  return report
+}
+
+/** Human-readable status for one subagent snapshot line. */
+function subagentStatusText(item, config) {
+  const labels = LABELS[config.language]
+  if (item.activity !== 'running') return labels.subagentInactive
+  if (item.interruptError !== undefined) return `${labels.subagentInterruptFailed} (${item.interruptError})`
+  if (item.interruptRequested) return labels.subagentInterruptRequested
+  return labels.subagentRunning
+}
+
+/** Render the "Subagents" section of the handoff document. */
+function subagentMarkdown(report, config) {
+  if (report === undefined || report.available !== true) return ''
+  const labels = LABELS[config.language]
+  const lines = [`## ${labels.subagents} (${report.items.length}/${report.total})`, '']
+  if (report.error !== undefined) lines.push(`> ${labels.subagentUnavailable}: ${report.error}`, '')
+  for (const [index, item] of report.items.entries()) {
+    lines.push(`### ${index + 1}. ${item.label ?? item.id}`, '')
+    lines.push(`- ${labels.subagentId}: \`${item.id}\``)
+    lines.push(`- ${labels.subagentMode}: \`${item.mode}\` / depth ${item.depth}`)
+    lines.push(`- ${labels.subagentStatus}: ${subagentStatusText(item, config)}`)
+    lines.push(`- ${labels.subagentTurns}: ${item.turns} / ${item.steps}`)
+    lines.push('')
+    lines.push(`${labels.subagentTask}:`, '', quoteBlock(item.task !== '' ? item.task : labels.empty), '')
+    if (item.progress !== '') {
+      lines.push(`${labels.subagentProgress}:`, '', quoteBlock(item.progress), '')
+    }
+    if (item.tools.length > 0) {
+      lines.push(`- ${labels.subagentTools}: ${item.tools.map((tool) => `\`${tool}\``).join(', ')}`, '')
+    }
+  }
+  if (report.omitted > 0) lines.push(`> ${labels.subagentOmitted.replace('{n}', String(report.omitted))}`, '')
+  return lines.join('\n')
+}
+
+/** Build the self-contained prompt the fresh Session uses to respawn one subagent. */
+function buildSubagentResumePrompt(item, config) {
+  const name = item.label ?? item.id
+  const task = item.task !== '' ? item.task : undefined
+  const progress = item.progress !== '' ? item.progress : undefined
+  const tools = item.tools.length > 0 ? item.tools.map((tool) => `\`${tool}\``).join(', ') : undefined
+  if (config.language === 'en') {
+    const lines = [
+      `You are taking over an unfinished subagent task from an old Session. Old subagent: ${name} (id: ${item.id}), state at handoff: ${item.activity}.`,
+      '',
+      'Original task:',
+      task ?? '(no original task was recorded)',
+      '',
+      'What it had done so far:',
+      progress ?? '(no assistant progress was recorded)',
+    ]
+    if (tools !== undefined) lines.push('', `Last tools: ${tools}`)
+    lines.push(
+      '',
+      'Continue the work; do not redo what is already finished:',
+      '1. First check the current workspace (files, git status, existing artifacts) and confirm the progress above still holds.',
+      '2. Finish only what is missing. If the task is in fact complete, report the result and the evidence instead of redoing it.',
+      '3. You cannot see the old Session; all context you need is in this prompt. State your assumptions and list anything that needs confirmation.',
+      '4. Finish with: what you did, files changed, verification commands and results, and remaining risks.',
+    )
+    return lines.join('\n')
+  }
+  const lines = [
+    `你接替旧会话里一个尚未完成的子智能体任务。旧子智能体：${name}（id: ${item.id}），交接时状态：${subagentStatusText(item, config)}。`,
+    '',
+    '原任务：',
+    task ?? '（没有记录到原任务）',
+    '',
+    '它已经做到的：',
+    progress ?? '（没有助手进展记录）',
+  ]
+  if (tools !== undefined) lines.push('', `最后调用的工具：${tools}`)
+  lines.push(
+    '',
+    '请接着做，不要重复已完成的部分：',
+    '1. 先核对工作区现状（文件、git 状态、已有产物），确认上面的进度仍然成立。',
+    '2. 只补完未完成的部分；如果原任务实际上已经完成，直接汇报结论与证据，不要重做。',
+    '3. 你看不到旧会话，所有必要背景都在本提示里；缺信息时写明假设，并列出需要确认的问题。',
+    '4. 结束时给出：做了什么、改了哪些文件、验证命令与结果、剩余风险。',
+  )
+  return lines.join('\n')
+}
+
+/** Render the "Subagent takeover" block appended to the fresh Session prompt. */
+function subagentTakeoverText(report, config) {
+  if (report === undefined || report.available !== true || config.subagentTakeover !== true) return ''
+  const labels = LABELS[config.language]
+  if (report.total === 0 || report.items.length === 0) return ''
+  const pending = report.items.filter((item) => item.unfinished)
+  if (pending.length === 0) {
+    return `\n\n## ${labels.subagentTakeoverTitle}\n${labels.subagentTakeoverDone}`
+  }
+  const lines = [
+    `\n## ${labels.subagentTakeoverTitle}`,
+    '',
+    labels.subagentTakeoverIntro.replace('{n}', String(pending.length)),
+    '',
+  ]
+  for (const [index, item] of pending.entries()) {
+    const prompt = buildSubagentResumePrompt(item, config)
+    const fence = codeFence(prompt)
+    lines.push(`### ${index + 1}. ${item.label ?? item.id}`, '', `${fence}text`, prompt, fence, '')
+  }
+  return lines.join('\n').trimEnd()
+}
+
+/** Compact counters for the tool's structured output and result message. */
+function subagentCounters(report, config) {
+  const available = report?.available === true
+  const items = available && Array.isArray(report.items) ? report.items : []
+  return {
+    available,
+    total: available ? report.total : 0,
+    running: available ? report.running : 0,
+    interrupted: available ? report.interruptRequested : 0,
+    takeover: available && config.subagentTakeover === true ? items.filter((item) => item.unfinished).length : 0,
+    omitted: available ? report.omitted : 0,
+  }
 }
 
 /**
@@ -334,7 +668,7 @@ function buildTranscriptMarkdown(options) {
 
 /** Build the durable handoff document. */
 function buildHandoffMarkdown(options) {
-  const { args, session, cwd, now, config, state, transcriptPath, preset } = options
+  const { args, session, cwd, now, config, state, transcriptPath, preset, subagents } = options
   const labels = LABELS[config.language]
   const lines = [`# ${labels.title}`, '']
   lines.push(`- ${labels.createdAt}: ${now.toISOString()}`)
@@ -366,6 +700,9 @@ function buildHandoffMarkdown(options) {
     lines.push(`## ${labels.reason}`, '', args.reason.trim(), '')
   }
 
+  const subagentSection = subagentMarkdown(subagents, config)
+  if (subagentSection !== '') lines.push(subagentSection, '')
+
   if (typeof transcriptPath === 'string' && transcriptPath !== '') {
     lines.push(`## ${labels.transcript}`, '', `${labels.transcriptHint}:`, '', `\`${transcriptPath}\``, '')
   }
@@ -377,12 +714,13 @@ function buildHandoffMarkdown(options) {
 
 /** Build the first user message for the fresh Session. */
 function buildContinuationPrompt(options) {
-  const { handoffPath, summary, nextPrompt, config, transcriptPath } = options
+  const { handoffPath, summary, nextPrompt, config, transcriptPath, subagents } = options
   const transcriptNote = typeof transcriptPath === 'string' && transcriptPath !== ''
     ? (config.language === 'en'
       ? `\n\nIf a detail is missing from the handoff document, search the full transcript on demand (do not load it whole):\n${transcriptPath}`
       : `\n\n如果交接文档里缺少某个细节，可按需检索完整转录（不要整份读入）：\n${transcriptPath}`)
     : ''
+  const takeoverNote = subagentTakeoverText(subagents, config)
   if (config.language === 'en') {
     return `You are taking over a session through a handoff.
 
@@ -390,7 +728,7 @@ Read the handoff document first:
 ${handoffPath}
 
 Handoff summary:
-${summary}${transcriptNote}
+${summary}${transcriptNote}${takeoverNote}
 
 Requirements:
 1. Briefly confirm the task and current state you are taking over. Do not repeat completed work.
@@ -407,7 +745,7 @@ ${nextPrompt}`
 ${handoffPath}
 
 交接摘要：
-${summary}${transcriptNote}
+${summary}${transcriptNote}${takeoverNote}
 
 要求：
 1. 先简短确认你接手的任务和当前状态，不要重复已完成的工作。
@@ -526,7 +864,7 @@ function createTool(ctx, config, completed, inFlight) {
   return {
     name: TOOL_NAME,
     description:
-      'Create a durable handoff and continue the work in a fresh Session. Call this once, only at a clean checkpoint, when the <session-pressure> block reports level recommended or urgent. It writes a Markdown handoff plus a searchable transcript sidecar, opens a new Session in the same workspace, sends the continuation prompt, and ends this turn. The new Session cannot see this conversation, so every argument must be self-contained.',
+      'Create a durable handoff and continue the work in a fresh Session. Call this once, only at a clean checkpoint, when the <session-pressure> block reports level recommended or urgent. It writes a Markdown handoff plus a searchable transcript sidecar, snapshots this Session\'s subagents (optionally interrupting the ones still running, per config), opens a new Session in the same workspace, sends the continuation prompt with self-contained subagent resume prompts, and ends this turn. The new Session cannot see this conversation, so every argument must be self-contained.',
     parameters: {
       type: 'object',
       properties: {
@@ -591,9 +929,22 @@ function createTool(ctx, config, completed, inFlight) {
           newSessionId: { type: 'string' },
           handoffPath: { type: 'string' },
           transcriptPath: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+          subagents: {
+            type: 'object',
+            properties: {
+              available: { type: 'boolean' },
+              total: { type: 'number' },
+              running: { type: 'number' },
+              interrupted: { type: 'number' },
+              takeover: { type: 'number' },
+              omitted: { type: 'number' },
+            },
+            required: ['available', 'total', 'running', 'interrupted', 'takeover', 'omitted'],
+            additionalProperties: false,
+          },
           message: { type: 'string' },
         },
-        required: ['status', 'newSessionId', 'handoffPath', 'transcriptPath', 'message'],
+        required: ['status', 'newSessionId', 'handoffPath', 'transcriptPath', 'subagents', 'message'],
         additionalProperties: false,
       },
       render(_args, value) {
@@ -698,6 +1049,7 @@ async function performHandoff(options) {
       newSessionId: recordedId,
       handoffPath: previousHandoff.path,
       transcriptPath: previousHandoff.transcriptPath ?? null,
+      subagents: subagentCounters(undefined, config),
       message,
     }
   }
@@ -718,7 +1070,10 @@ async function performHandoff(options) {
     }
   }
 
-  const markdown = buildHandoffMarkdown({ args: normalized, session, cwd, now, config, state, transcriptPath, preset: requestedPreset })
+  const subagents = await collectSubagents(ctx, session, config, exec.agent)
+  const subagentStats = subagentCounters(subagents, config)
+
+  const markdown = buildHandoffMarkdown({ args: normalized, session, cwd, now, config, state, transcriptPath, preset: requestedPreset, subagents })
   const handoffPath = join(directory, `handoff-${stamp}-${safeSession}.md`)
   await writeFile(handoffPath, markdown, 'utf8')
 
@@ -747,6 +1102,7 @@ async function performHandoff(options) {
     nextPrompt: normalized.nextPrompt,
     config,
     transcriptPath,
+    subagents,
   })
   try {
     await ctx.sessionController.prompt(
@@ -770,10 +1126,13 @@ async function performHandoff(options) {
     ...(recordedId !== undefined && previousTarget?.durable === false ? [`- Replaced: ${recordedId} (${previousTarget.reason})`] : []),
     `- Handoff document: ${handoffPath}`,
     ...(transcriptPath !== undefined ? [`- Full transcript: ${transcriptPath}`] : []),
+    ...(subagentStats.available && subagentStats.total > 0
+      ? [`- Subagents: ${subagentStats.total} tracked, ${subagentStats.running} running, ${subagentStats.interrupted} interrupt requested, ${subagentStats.takeover} handed over`]
+      : []),
     '- Continuation prompt: queued in the new Session',
     'Switch to the new Session in the sidebar to continue.',
   ].join('\n')
-  return { status: 'created', newSessionId: created.sessionId, handoffPath, transcriptPath: transcriptPath ?? null, message }
+  return { status: 'created', newSessionId: created.sessionId, handoffPath, transcriptPath: transcriptPath ?? null, subagents: subagentStats, message }
 }
 
 /** Read the current agent-preset roster, tolerating profiles without the registry. */
