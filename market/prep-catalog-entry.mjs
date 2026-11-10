@@ -40,10 +40,10 @@ const icon = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/asset
 // 仓库里带有 README 的英文摘要时，优先用它，避免两处描述漂移。
 const descriptionEn =
   arg('description-en') ??
-  'Durable session handoff for DeepSeek Harness: pressure-aware handoff docs, a searchable transcript, and automatic continuation in a fresh Session. Subagents are snapshotted, still-running ones are interrupted, and unfinished tasks are handed to fresh subagents. The status pip beside the input box shades from green to blue to amber to red as pressure rises.'
+  'Pressure-aware session handoff for DeepSeek Harness: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace. Subagents are snapshotted, still-running ones are interrupted, and unfinished tasks are handed to fresh subagents; a session without subagents simply gets the normal handoff. A status pip and its label shade from green to blue to amber to red as pressure rises.'
 const descriptionZh =
   arg('description-zh') ??
-  '为 DeepSeek Harness 提供会话交接：上下文压力到阈值时写交接文档与可搜索转录，并在新会话里自动继续；输入框下方状态点随压力从绿 → 蓝 → 琥珀 → 红逐级变色。'
+  '为 DeepSeek Harness 提供会话交接：长会话降智前自动写交接文档，并在同一工作目录开新会话继续；子智能体随交接迁移——仍在运行的先打断，未完成的任务写进续接提示交给新子智能体接手；没有子智能体时就是一次普通交接。输入框下方常驻压力提示，状态点与文字颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化。'
 
 // YAML 标量：含「: 」、以特殊字符开头、或含 # 时必须加引号（contributing.md 明写的前者）。
 function yamlScalar(value) {
