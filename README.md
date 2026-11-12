@@ -10,7 +10,7 @@ DeepSeek Harness 的 Host + Client 插件：在长会话开始“降智”前，
 2. **动态提示**：每次请求都会在运行时上下文里加入一段 `<session-pressure>`，告诉模型当前压力和 `level`（`low` / `watch` / `recommended` / `urgent`）。
 3. **策略段**：系统提示里加入“会话寿命与交接”规则，明确只在 `recommended` / `urgent` 且处于可持久化检查点时调用工具。
 4. **交接工具**：`session_handoff` 把目标、现状、已完成、待办、决策、关键文件、验证结果写进 `<cwd>/.dsh/handoffs/handoff-<时间>-<会话>.md`，同时在同目录写一份可检索的 `handoff-<时间>-<会话>.transcript.md`；还会快照旧会话的子智能体（默认打断仍在跑的），把它们的任务和进度写进文档，并给每个没跑完的子智能体生成一段自包含的“接手提示词”，让新会话用自带 `subagent` 工具重新派出；随后用 `sessionController.create()` 新建会话；用 `sessionController.prompt()` 把“读交接文档 + 继续指令”发过去；最后结束旧回合。新会话只读摘要，缺细节时再按需 `grep` 转录，不会整份塞进上下文。
-5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点的颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化（绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接；交接中为琥珀色脉冲，完成后变回绿色），「会话交接」四个字的颜色也跟着同一套等级色走；配色只用 DSH 调色板里真实存在的 token（`--dsw-alias-state-success/warn/error-primary` 与 `--dsw-static-blue-500`），不再用会被解析成近黑色的 `--dsw-alias-brand-primary`。点这四个字展开面板，能看到三项阈值进度和解释。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
+5. **界面**：`client.js` 在输入框下方右侧只放一个 6px 状态点 + “会话交接”四个字，不占图标位、不挡内置状态。状态点的颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化（绿=健康、蓝=留意、琥珀=建议交接、红=尽快交接；交接中为琥珀色脉冲，完成后变回绿色），「会话交接」四个字的颜色也跟着同一套等级色走；配色只用 DSH 调色板里真实存在的 token（`--dsw-alias-state-success/warn/error-primary` 与 `--dsw-static-blue-500`），不再用会被解析成近黑色的 `--dsw-alias-brand-primary`。点这四个字展开面板，能看到三项阈值进度。点“现在交接”会直接把交接指令填进输入框并发送，不需要复制提示词；这条指令可以在面板里「编辑」改成自己的说法，也可以在配置里设 `handoffPrompt`。交接完成后会自动切到新会话，也可以手动点“打开新会话”。
 
 新会话不会看到旧对话，所以工具参数里的 `summary` 和 `nextPrompt` 必须是自包含的。
 
@@ -115,6 +115,7 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 | `contextWatch` / `contextSoft` / `contextUrgent` | 0.40 / 0.60 / 0.85 | 上下文占用比例阈值 |
 | `handoffDir` | `.dsh/handoffs` | 相对会话 cwd 的交接文档目录 |
 | `language` | `zh` | 文档和续接提示语言，`zh` 或 `en` |
+| `handoffPrompt` | 空 | “现在交接”发出去的指令文案；空 = 内置文案。支持 `{level}` `{pct}` `{turn}` `{step}` 占位符 |
 | `concludeTurn` | `true` | 交接成功后立刻结束旧回合 |
 | `autoOpenNewSession` | `true` | 交接成功后 Client 半自动切到新会话 |
 | `transcript` | `true` | 额外导出一份可检索的完整转录旁路 |
@@ -148,8 +149,16 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - 子智能体日志读失败只记 warning，不阻塞交接；读不到内容时文档仍列会话 id 和状态。
 - `subagentTakeover: false` 只写文档、不生成接手提示词；`subagents: off` 完全不碰子智能体。
 
-## 已验证
+### 自定义交接提示词
 
+“现在交接”按钮发出去的那段指令可以改：
+
+- **在面板里改**：点开「会话交接」→「交接提示词」→「编辑」，改完点「保存」。文案存在这台设备的浏览器 `localStorage`（键 `dsh-handoff-session.handoffPrompt`），刷新、重启 DSH 都还在；「恢复默认」清掉本地覆盖。
+- **在配置里改**：`cordis.patch.yml` 的 `handoffPrompt`，对所有设备生效，也是面板默认显示的内容；面板里保存的文案会覆盖它。
+- 两种都支持 `{level}`（当前等级文字）、`{pct}`（上下文占比）、`{turn}`、`{step}` 占位符，发送前会替换成当前值；留空即用内置文案。
+- 选了「下个会话模式」时，模式说明仍然会追加在指令末尾，不受自定义文案影响。
+
+## 已验证
 - `node --check index.js` 通过，`node selftest.mjs` 输出 `selftest: ok`。
 - `node --check client.js` 通过，`node client-selftest.mjs` 输出 `client selftest: ok`（用假 React/模块加载器渲染折叠态、展开态、已交接态和无投影态）。
 - bundle 已用 `plugin_manager install_bundle` 安装到 `desktop` profile，Host 激活成功；实时运行时上下文里能看到 `<session-pressure ...>`，`context_tokens` 为完整 prompt（含缓存命中），`cache_read` 为合理百分比。

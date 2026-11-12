@@ -40,10 +40,10 @@ const icon = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/asset
 // 仓库里带有 README 的英文摘要时，优先用它，避免两处描述漂移。
 const descriptionEn =
   arg('description-en') ??
-  'Pressure-aware session handoff for DeepSeek Harness: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace. Subagents are snapshotted, still-running ones are interrupted, and unfinished tasks are handed to fresh subagents; a session without subagents simply gets the normal handoff. A status pip and its label shade from green to blue to amber to red as pressure rises.'
+  'Pressure-aware session handoff for DeepSeek Harness: writes a handoff doc before a long session degrades, then continues in a fresh session in the same workspace. Subagents are snapshotted, still-running ones are interrupted, and unfinished tasks are handed to fresh subagents; a session without subagents simply gets the normal handoff. The handoff request itself is editable from the panel. A status pip and its label shade from green to blue to amber to red as pressure rises.'
 const descriptionZh =
   arg('description-zh') ??
-  '为 DeepSeek Harness 提供会话交接：长会话降智前自动写交接文档，并在同一工作目录开新会话继续；子智能体随交接迁移——仍在运行的先打断，未完成的任务写进续接提示交给新子智能体接手；没有子智能体时就是一次普通交接。输入框下方常驻压力提示，状态点与文字颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化。'
+  '为 DeepSeek Harness 提供会话交接：长会话降智前自动写交接文档，并在同一工作目录开新会话继续；子智能体随交接迁移——仍在运行的先打断，未完成的任务写进续接提示交给新子智能体接手；没有子智能体时就是一次普通交接；「现在交接」的提示词可以在面板里直接改。输入框下方常驻压力提示，状态点与文字颜色随压力从绿 → 蓝 → 琥珀 → 红逐级变化。'
 
 // YAML 标量：含「: 」、以特殊字符开头、或含 # 时必须加引号（contributing.md 明写的前者）。
 function yamlScalar(value) {

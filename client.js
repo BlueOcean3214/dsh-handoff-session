@@ -41,8 +41,6 @@ window.__ModuleLoader__.load({
         modeDefault: '默认',
         modePrompt: '下个会话模式：{name}（agentPreset: "{id}"）。请在调用 session_handoff 时把 agentPreset 设为 "{id}"。',
         threshold: '建议阈值',
-        whyTitle: '为什么要交接',
-        why: '长会话会累积上下文，模型更容易漏掉早期的决定。交接会把目标、已完成、待办、关键文件和验证结果写成文档，新会话从这份文档继续。',
         step1: '写入交接文档',
         step2: '开启新会话',
         step3: '自动继续工作',
@@ -62,6 +60,15 @@ window.__ModuleLoader__.load({
         note: '点击后会发送一条交接指令；模型会先判断当前是否处于可安全停下的检查点。',
         unavailable: '当前会话不可输入，无法发起交接。',
         handoffPrompt: '当前会话压力等级：{level}（上下文 {pct}，{turn} 轮，{step} 步）。请现在执行会话交接：先判断当前是否处于可安全停下的检查点；如果是，就写一份完整交接文档并调用 session_handoff 开启新会话；如果不是，请说明还差哪一步，完成后再交接。',
+        promptTitle: '交接提示词',
+        promptEdit: '编辑',
+        promptCollapse: '收起',
+        promptHint: '可用占位符：{level} 当前等级、{pct} 上下文占比、{turn} 轮数、{step} 步数。留空则用默认文案。',
+        promptSourceDefault: '当前使用内置默认文案，点「编辑」可以改。',
+        promptSourceCustom: '当前使用你自定义的文案（只保存在这台设备）。',
+        promptSourceConfig: '当前使用插件配置里的文案，点「编辑」可在这台设备上覆盖。',
+        promptSave: '保存',
+        promptReset: '恢复默认',
       },
       en: {
         title: 'Session handoff',
@@ -84,8 +91,6 @@ window.__ModuleLoader__.load({
         modeDefault: 'default',
         modePrompt: 'Next session mode: {name} (agentPreset: "{id}"). When calling session_handoff, set agentPreset to "{id}".',
         threshold: 'Suggested at',
-        whyTitle: 'Why hand off',
-        why: 'Long conversations accumulate context, and the model can lose early decisions. A handoff writes the goal, completed work, remaining work, key files, and verification into a document; the new session continues from it.',
         step1: 'Write the handoff',
         step2: 'Open a fresh session',
         step3: 'Continue automatically',
@@ -105,6 +110,15 @@ window.__ModuleLoader__.load({
         note: 'Clicking sends a handoff request. The model first checks whether this is a safe checkpoint.',
         unavailable: 'This session cannot accept input right now.',
         handoffPrompt: 'Current session pressure: {level} (context {pct}, {turn} turns, {step} steps). Please perform the session handoff now: first decide whether this is a safe checkpoint. If it is, write a complete handoff and call session_handoff to open a fresh session. If not, state exactly what remains, finish it, then hand off.',
+        promptTitle: 'Handoff instruction',
+        promptEdit: 'Edit',
+        promptCollapse: 'Close',
+        promptHint: 'Placeholders: {level}, {pct}, {turn}, {step}. Leave it empty to use the built-in wording.',
+        promptSourceDefault: 'Using the built-in wording. Edit it to make the request your own.',
+        promptSourceCustom: 'Using your custom wording (saved on this device only).',
+        promptSourceConfig: 'Using the wording from the plugin config. Edit it to override on this device.',
+        promptSave: 'Save',
+        promptReset: 'Reset',
       },
     }
 
@@ -124,6 +138,36 @@ window.__ModuleLoader__.load({
     // Module-level so returning to the old Session does not bounce the user
     // into the new one again (the component remounts when the view changes).
     const autoOpenedSessions = new Set()
+
+    // The customised "hand off now" instruction is a Client-side preference, so
+    // it lives in this browser rather than in the Host config. A Host config
+    // value (`handoffPrompt`) still acts as the default every device starts
+    // from; saving an empty editor clears the local override.
+    const PROMPT_STORAGE_KEY = 'dsh-handoff-session.handoffPrompt'
+    const PROMPT_MAX_CHARS = 4000
+
+    function readStoredPrompt() {
+      try {
+        const api = globalThis.localStorage
+        if (api === undefined || api === null) return ''
+        const value = api.getItem(PROMPT_STORAGE_KEY)
+        return typeof value === 'string' ? value : ''
+      } catch {
+        return ''
+      }
+    }
+
+    function writeStoredPrompt(value) {
+      try {
+        const api = globalThis.localStorage
+        if (api === undefined || api === null) return
+        if (value === '') api.removeItem(PROMPT_STORAGE_KEY)
+        else api.setItem(PROMPT_STORAGE_KEY, value)
+      } catch {
+        // A refused storage write must not break the button; the current
+        // React state still carries the wording for this Session.
+      }
+    }
 
     function levelOf(value, watch, soft, urgent) {
       if (value >= urgent) return 'urgent'
@@ -211,12 +255,22 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = React.useState(false)
       const [sent, setSent] = React.useState(false)
       const [preset, setPreset] = React.useState('')
+      const [editing, setEditing] = React.useState(false)
+      const [draftPrompt, setDraftPrompt] = React.useState('')
+      const [customPrompt, setCustomPrompt] = React.useState(readStoredPrompt())
       const rootRef = React.useRef(null)
 
       React.useEffect(() => {
         if (!open) return undefined
         const onKey = (event) => {
-          if (event.key === 'Escape') setOpen(false)
+          if (event.key !== 'Escape') return
+          // Escape inside the prompt editor cancels the edit only; the panel
+          // stays open so a half-typed wording is not lost by accident.
+          if (editing === true) {
+            setEditing(false)
+            return
+          }
+          setOpen(false)
         }
         const onDown = (event) => {
           if (rootRef.current !== null && !rootRef.current.contains(event.target)) setOpen(false)
@@ -227,7 +281,7 @@ window.__ModuleLoader__.load({
           document.removeEventListener('keydown', onKey)
           document.removeEventListener('mousedown', onDown)
         }
-      }, [open])
+      }, [editing, open])
 
       React.useEffect(() => {
         const id = view?.newSessionId
@@ -290,13 +344,43 @@ window.__ModuleLoader__.load({
           ? LEVEL_COLOR.recommended
           : LEVEL_COLOR[level] ?? LEVEL_COLOR.low
 
+      // Prompt resolution order: this device's saved edit, then the Host config
+      // (`handoffPrompt` on the projection), then the built-in wording.
+      const configuredPrompt = typeof view?.handoffPrompt === 'string' ? view.handoffPrompt.trim() : ''
+      const builtinPrompt = t('handoffPrompt')
+      const defaultPrompt = configuredPrompt !== '' ? configuredPrompt : builtinPrompt
+      const activePrompt = customPrompt.trim() !== '' ? customPrompt : defaultPrompt
+      const promptSource = customPrompt.trim() !== ''
+        ? t('promptSourceCustom')
+        : configuredPrompt !== ''
+          ? t('promptSourceConfig')
+          : t('promptSourceDefault')
+
+      const beginEditPrompt = React.useCallback(() => {
+        setDraftPrompt(activePrompt)
+        setEditing(true)
+      }, [activePrompt])
+
+      const savePrompt = React.useCallback(() => {
+        const next = draftPrompt.trim().slice(0, PROMPT_MAX_CHARS)
+        setCustomPrompt(next)
+        writeStoredPrompt(next)
+        setEditing(false)
+      }, [draftPrompt])
+
+      const resetPrompt = React.useCallback(() => {
+        setCustomPrompt('')
+        writeStoredPrompt('')
+        setDraftPrompt(defaultPrompt)
+      }, [defaultPrompt])
+
       const requestHandoff = React.useCallback(() => {
         if (inputActions === undefined || succeeded) return
-        let prompt = t('handoffPrompt')
-          .replace('{pct}', pct(ratio))
-          .replace('{turn}', String(turn))
-          .replace('{step}', String(step))
-          .replace('{level}', levelLabel(t, level))
+        let prompt = activePrompt
+          .replaceAll('{pct}', pct(ratio))
+          .replaceAll('{turn}', String(turn))
+          .replaceAll('{step}', String(step))
+          .replaceAll('{level}', levelLabel(t, level))
         const chosen = presets.find((row) => row.id === preset)
         if (chosen !== undefined && chosen.broken !== true) {
           prompt += `\n\n${t('modePrompt').replace('{name}', chosen.name ?? chosen.id).replaceAll('{id}', chosen.id)}`
@@ -305,7 +389,7 @@ window.__ModuleLoader__.load({
         inputActions.submit()
         setSent(true)
         setOpen(false)
-      }, [inputActions, level, preset, presets, ratio, step, succeeded, t, turn])
+      }, [activePrompt, inputActions, level, preset, presets, ratio, step, succeeded, t, turn])
 
       const openNewSession = React.useCallback(() => {
         const id = view?.newSessionId
@@ -415,9 +499,51 @@ window.__ModuleLoader__.load({
               ),
             h(
               'div',
-              { className: 'dsh-handoff-why' },
-              h('strong', null, t('whyTitle')),
-              h('p', null, t('why')),
+              { className: 'dsh-handoff-prompt' },
+              h(
+                'div',
+                { className: 'dsh-handoff-prompt-head' },
+                h('strong', null, t('promptTitle')),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsh-handoff-link',
+                    onClick: editing ? () => setEditing(false) : beginEditPrompt,
+                  },
+                  editing ? t('promptCollapse') : t('promptEdit'),
+                ),
+              ),
+              editing
+                ? h(
+                    'div',
+                    { className: 'dsh-handoff-prompt-editor' },
+                    h('textarea', {
+                      className: 'dsh-handoff-prompt-input',
+                      value: draftPrompt,
+                      rows: 6,
+                      maxLength: PROMPT_MAX_CHARS,
+                      placeholder: defaultPrompt,
+                      'aria-label': t('promptTitle'),
+                      onChange: (event) => setDraftPrompt(event.target.value),
+                    }),
+                    h('p', { className: 'dsh-handoff-prompt-hint' }, t('promptHint')),
+                    h(
+                      'div',
+                      { className: 'dsh-handoff-prompt-actions' },
+                      h(
+                        'button',
+                        { type: 'button', className: 'dsh-handoff-link', onClick: resetPrompt },
+                        t('promptReset'),
+                      ),
+                      h(
+                        'button',
+                        { type: 'button', className: 'dsh-handoff-button dsh-handoff-button-secondary', onClick: savePrompt },
+                        t('promptSave'),
+                      ),
+                    ),
+                  )
+                : h('p', { className: 'dsh-handoff-prompt-current' }, promptSource),
             ),
             h(
               'div',
@@ -663,18 +789,66 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-label-secondary, rgba(0,0,0,.35));
         opacity: .6;
       }
-      .dsh-handoff-why {
-        padding: 10px;
-        border-radius: 9px;
-        background: var(--dsw-alias-bg-layer-1, rgba(0,0,0,.03));
+      .dsh-handoff-prompt {
         margin-bottom: 10px;
+        padding: 9px 10px;
+        border: 1px solid var(--dsw-alias-border-l1, rgba(0,0,0,.1));
+        border-radius: 9px;
       }
-      .dsh-handoff-why strong { font-size: 11px; }
-      .dsh-handoff-why p {
-        margin: 4px 0 0;
-        color: var(--dsw-alias-label-secondary, rgba(0,0,0,.65));
+      .dsh-handoff-prompt-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .dsh-handoff-prompt-head strong { font-size: 11px; }
+      .dsh-handoff-link {
+        padding: 0 2px;
+        border: 0;
+        background: transparent;
+        color: var(--dsw-static-blue-500, #2563eb);
+        font: inherit;
         font-size: 11px;
-        line-height: 1.55;
+        cursor: pointer;
+      }
+      .dsh-handoff-link:hover { text-decoration: underline; }
+      .dsh-handoff-prompt-current {
+        margin: 4px 0 0;
+        color: var(--dsw-alias-label-secondary, rgba(0,0,0,.6));
+        font-size: 10px;
+        line-height: 1.5;
+      }
+      .dsh-handoff-prompt-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; }
+      .dsh-handoff-prompt-input {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 84px;
+        max-height: 200px;
+        padding: 7px 8px;
+        border: 1px solid var(--dsw-alias-border-l1, rgba(0,0,0,.16));
+        border-radius: 7px;
+        background: var(--dsw-alias-bg-layer-1, #fff);
+        color: var(--dsw-alias-label-primary, #1a1a1a);
+        font: inherit;
+        font-size: 11px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+      .dsh-handoff-prompt-input:focus-visible {
+        outline: 2px solid var(--dsw-static-blue-500, #2563eb);
+        outline-offset: 1px;
+      }
+      .dsh-handoff-prompt-hint {
+        margin: 0;
+        color: var(--dsw-alias-label-secondary, rgba(0,0,0,.55));
+        font-size: 10px;
+        line-height: 1.5;
+      }
+      .dsh-handoff-prompt-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
       }
       .dsh-handoff-flow {
         display: flex;
@@ -684,8 +858,7 @@ window.__ModuleLoader__.load({
         margin-bottom: 12px;
         color: var(--dsw-alias-label-secondary, rgba(0,0,0,.65));
         font-size: 11px;
-      }
-      .dsh-handoff-arrow { opacity: .5; }
+      }      .dsh-handoff-arrow { opacity: .5; }
       .dsh-handoff-actions { display: flex; justify-content: flex-end; gap: 8px; }
       .dsh-handoff-button {
         min-height: 30px;

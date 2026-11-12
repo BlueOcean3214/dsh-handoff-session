@@ -16,6 +16,18 @@ const source = readFileSync(join(here, 'client.js'), 'utf8')
 
 let loaded
 const stateQueue = []
+const store = new Map()
+globalThis.localStorage = {
+  getItem(key) {
+    return store.has(key) ? store.get(key) : null
+  },
+  setItem(key, value) {
+    store.set(key, String(value))
+  },
+  removeItem(key) {
+    store.delete(key)
+  },
+}
 const documentStub = {
   addEventListener() {},
   removeEventListener() {},
@@ -229,6 +241,54 @@ primary.props.onClick()
 if (typeof draft !== 'string' || !draft.includes('agentPreset: "ptc"')) {
   throw new Error(`handoff draft did not carry the chosen preset: ${String(draft)}`)
 }
+
+// The handoff instruction itself is customisable. A saved edit on this device
+// wins over the built-in wording and over the Host config.
+const PROMPT_KEY = 'dsh-handoff-session.handoffPrompt'
+store.set(PROMPT_KEY, '自定义：等级 {level}，上下文 {pct}，第 {turn} 轮第 {step} 步')
+let customDraft
+stateQueue.push(true, false, '')
+const customExpanded = render({ inputActions: { setDraft: (value) => { customDraft = value }, submit() {} } })
+findPrimary(customExpanded).props.onClick()
+if (typeof customDraft !== 'string' || !customDraft.startsWith('自定义：等级 建议交接，上下文 62%，第 21 轮第 520 步')) {
+  throw new Error(`custom prompt was not used: ${String(customDraft)}`)
+}
+store.delete(PROMPT_KEY)
+
+// Without a saved edit the Host config wording is used, still with placeholders.
+let configDraft
+stateQueue.push(true, false, '')
+const configExpanded = render({
+  useProjection: () => ({ ...view, handoffPrompt: 'CFG {pct} / {turn}' }),
+  inputActions: { setDraft: (value) => { configDraft = value }, submit() {} },
+})
+findPrimary(configExpanded).props.onClick()
+if (typeof configDraft !== 'string' || !configDraft.startsWith('CFG 62% / 21')) {
+  throw new Error(`configured prompt was not used: ${String(configDraft)}`)
+}
+
+// The editor renders a textarea, and Save writes the wording to this device.
+stateQueue.push(true, false, '', true, '保存我 {level}')
+const editingRender = render({})
+const editingText = JSON.stringify(editingRender)
+if (!editingText.includes('dsh-handoff-prompt-input')) throw new Error('prompt editor missing textarea')
+function findByText(node, text) {
+  if (node === null || typeof node !== 'object') return undefined
+  if (node.props?.children === text) return node
+  const children = node.props?.children ?? node.children
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = findByText(child, text)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+const saveButton = findByText(editingRender, '保存')
+if (saveButton === undefined) throw new Error('prompt editor missing save button')
+saveButton.props.onClick()
+if (store.get(PROMPT_KEY) !== '保存我 {level}') {
+  throw new Error(`saved prompt was not stored: ${String(store.get(PROMPT_KEY))}`)
+}
+store.delete(PROMPT_KEY)
 
 // Handoff already completed.
 const succeeded = render({ useProjection: () => ({ ...view, handoffSucceeded: true }) })

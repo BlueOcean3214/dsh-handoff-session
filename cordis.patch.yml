@@ -17,6 +17,10 @@
         handoffDir: .dsh/handoffs
         # Language for the generated document and the new-session prompt.
         language: zh
+        # Wording of the "hand off now" request put into the composer. Empty =
+        # built-in wording. Placeholders: {level} {pct} {turn} {step}.
+        # The Client panel can also override this per device from its editor.
+        handoffPrompt: ''
         # End the old turn right after a successful handoff.
         concludeTurn: true
         # Let the Client half switch to the fresh Session automatically.

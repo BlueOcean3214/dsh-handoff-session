@@ -34,6 +34,10 @@ const DEFAULTS = Object.freeze({
   contextUrgent: 0.85,
   handoffDir: '.dsh/handoffs',
   language: 'zh',
+  // Empty = use the localized built-in wording in the Client half. A non-empty
+  // template is what the "hand off now" button puts into the composer; the
+  // Client may override it per browser from its own editor.
+  handoffPrompt: '',
   concludeTurn: true,
   autoOpenNewSession: true,
   transcript: true,
@@ -47,6 +51,9 @@ const DEFAULTS = Object.freeze({
 })
 
 const SUBAGENT_MODES = new Set(['off', 'keep', 'interrupt'])
+
+/** Upper bound for a custom handoff instruction, in characters. */
+const HANDOFF_PROMPT_MAX = 4000
 
 const LEVEL_RANK = { low: 0, watch: 1, recommended: 2, urgent: 3 }
 
@@ -169,6 +176,7 @@ function normalizeConfig(raw) {
     contextUrgent,
     handoffDir: typeof input.handoffDir === 'string' && input.handoffDir.trim() !== '' ? input.handoffDir.trim() : DEFAULTS.handoffDir,
     language: String(input.language ?? DEFAULTS.language).toLowerCase().startsWith('en') ? 'en' : 'zh',
+    handoffPrompt: typeof input.handoffPrompt === 'string' ? input.handoffPrompt.trim().slice(0, HANDOFF_PROMPT_MAX) : DEFAULTS.handoffPrompt,
     concludeTurn: input.concludeTurn !== false,
     autoOpenNewSession: input.autoOpenNewSession !== false,
     transcript: input.transcript !== false,
@@ -1207,6 +1215,7 @@ function registerProjection(ctx, config, getPresets) {
           handoffSucceeded: state.handoffSucceeded,
           newSessionId: state.newSessionId ?? null,
           autoOpenNewSession: config.autoOpenNewSession,
+          handoffPrompt: config.handoffPrompt,
           presets: typeof getPresets === 'function' ? getPresets() : [],
         }
       },
