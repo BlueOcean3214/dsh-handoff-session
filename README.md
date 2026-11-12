@@ -85,8 +85,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 已发布：
 
-- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）、`@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）、`@0.7.0`（2026-11-05 14:44，新增「会话交接」左侧 6px 压力状态点，颜色顺序绿→蓝→琥珀→红）和 `@0.7.1`（2026-11-05，修掉 watch 档把 `--dsw-alias-brand-primary` 当蓝色用、结果渲染成近黑的问题，改用 `--dsw-static-blue-500`；文字颜色一律跟随等级色；描述文案补上「颜色随压力逐级变化」）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
-- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.7.1`）。
+- npm：`dsh-handoff-session@0.6.0`（2026-11-03 13:51）、`@0.6.1`（14:29，带 `repository` 字段，npm 页面上已关联 GitHub 仓库）、`@0.7.0`（2026-11-05 14:44，新增「会话交接」左侧 6px 压力状态点，颜色顺序绿→蓝→琥珀→红）、`@0.7.1`（2026-11-05，修掉 watch 档把 `--dsw-alias-brand-primary` 当蓝色用、结果渲染成近黑的问题，改用 `--dsw-static-blue-500`；文字颜色一律跟随等级色；描述文案补上「颜色随压力逐级变化」）、`@0.8.0`（2026-11-10，子智能体随交接迁移：快照、打断仍在运行的、未完成任务写进续接提示）和 `@0.9.0`（2026-11-12，「现在交接」的提示词可在面板里直接编辑，也可用 `handoffPrompt` 配置；删掉面板里的「为什么要交接」说明框）：`https://www.npmjs.com/package/dsh-handoff-session`，`npm i dsh-handoff-session` 与 `dsh plugin add dsh-handoff-session` 都验证可用。
+- 自托管索引：**`https://raw.githubusercontent.com/BlueOcean3214/dsh-handoff-session/main/market/index.json`**（`Cache-Control: max-age=300`，内容就是仓库里的 `market/index.json`，`marketInstallTarget` = `dsh-handoff-session@0.9.0`）。
   - 也试过 `https://cdn.jsdelivr.net/npm/dsh-handoff-session/market/index.json`：能用，但 npm 包里的文件不可变，发版后 `publishTimestamp` 只能写预估值；而且 jsDelivr 对 `/npm/<pkg>/` 这种不固定版本的路径缓存 12 小时（回源节点之间还会不一致，`purge.jsdelivr.net` 也不保证立刻全清）。所以索引改由 Git 托管。
 - 包名定为 `dsh-handoff-session`（`dsh-handoff` 已被 `zhijiangtang/dsh-handoff` 占用，而且对方也是会话交接类插件；`dsh-session-handoff`、`dsh-handoff-kit`、`dsh-continuity`、`dsh-session-continuity` 同样被占）。
 - `package.json`：去掉 `private`，补 `license: MIT`、`keywords`、`publishConfig.access: public`；`cordis.patch.yml` 的 `insert.name` 与 `client.js` 的模块 `id` 已同步改名，`client-selftest.mjs` 里的断言也一起改了。
@@ -100,7 +100,7 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - `screenshots.json`（可选）：仓库根放 1–8 张截图能让详情页更好看，需要真实界面截图后再加。
 - `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
 
-> 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 一次性发布（`--//registry.npmjs.org/:_authToken=...`），不要写进 `.npmrc`。
+> 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 发布。从 0.9.0 那次起，用户要求把这颗 token 常驻在 `C:\Users\Santuo\.npmrc`（`//registry.npmjs.org/:_authToken=npm_…`），所以以后发版直接 `npm publish` 即可；注意旧 token 会静默变成 `401 Unauthorized`（响应体为空），先 `npm whoami` 确认再发。
 >
 > 注意：npm 包内那份 `market/index.json` 的 `publishTimestamp` 是发布前生成时估的（`1793687327`，差 66 秒），仓库里的那份才是 registry 的真实时间（`1793687393`）。索引现在从 Git 托管，所以以后不用再为此重发版本。
 
