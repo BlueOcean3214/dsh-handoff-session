@@ -1123,6 +1123,7 @@ async function performHandoff(options) {
 
   let created
   let presetDropped = false
+  let attachNote
   const workspace = workspaceFor(ctx, cwd)
   const sameDirectory = workspace !== undefined && workspace.path.replace(/[\\/]+$/, '').toLowerCase() === cwd.replace(/[\\/]+$/, '').toLowerCase()
   const preset = requestedPreset ?? session.header.agentPreset
@@ -1133,7 +1134,17 @@ async function performHandoff(options) {
     if (answer === undefined || typeof answer.sessionId !== 'string' || answer.sessionId === '') {
       throw new Error('sessionController.create returned no sessionId')
     }
-    if (workspace !== undefined && !sameDirectory) await workspace.attachSession?.(answer.sessionId)
+    if (workspace !== undefined && !sameDirectory) {
+      // A workspace only accepts Sessions whose cwd is its own root. When the old
+      // Session ran in a subdirectory (F:\project\notes inside F:\project) the
+      // attach is refused, but the new Session already exists with the right cwd,
+      // so keep it and report the grouping mismatch instead of failing the handoff.
+      try {
+        await workspace.attachSession?.(answer.sessionId)
+      } catch (error) {
+        attachNote = `- Workspace: the new Session works in ${cwd}, a subdirectory of the workspace rooted at ${workspace.path}, so DSH keeps it out of that workspace (${String(error)})`
+      }
+    }
     return answer
   }
   try {
@@ -1189,6 +1200,7 @@ async function performHandoff(options) {
     'Handoff complete. A fresh Session is running.',
     `- New Session: ${created.sessionId}`,
     ...(presetDropped ? [`- Preset: ${preset} is not available in this profile, so the new Session uses the default preset`] : []),
+    ...(attachNote ? [attachNote] : []),
     ...(recordedId !== undefined && previousTarget?.durable === false ? [`- Replaced: ${recordedId} (${previousTarget.reason})`] : []),
     `- Handoff document: ${handoffPath}`,
     ...(transcriptPath !== undefined ? [`- Full transcript: ${transcriptPath}`] : []),

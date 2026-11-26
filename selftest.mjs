@@ -24,6 +24,9 @@ let persistenceAvailable = true
 // Preset ids the fixture profile no longer has; requesting one fails like a
 // real session.create does after a DSH upgrade or a preset rename.
 const stalePresets = new Set()
+// Workspaces the fixture registry reports; a handoff into a subdirectory of one
+// exercises the refused-attach path.
+const workspaces = []
 
 const state = {
   turn: 22,
@@ -126,7 +129,7 @@ const ctx = {
       return () => {}
     },
   },
-  workspaceRegistry: { list: () => [] },
+  workspaceRegistry: { list: () => workspaces },
   agents: { currentInitiator: () => undefined },
   // Host services the durability probe reaches through ctx.get: optional, so
   // the fallback chain stays testable by switching them off.
@@ -425,6 +428,24 @@ assert.equal(createdRequest.agentPreset, undefined)
 assert.match(stalePreset.message, /retired/)
 assert.match(stalePreset.message, /default preset/)
 stalePresets.clear()
+
+// A Session started in a subdirectory of a workspace still gets a successor: DSH
+// refuses to attach it to the parent workspace, but the new Session already
+// exists in the right cwd, so the handoff must not be reported as a failure.
+workspaces.push({
+  id: 'ws-parent',
+  path: join(temp, '..'),
+  async attachSession(sessionId) {
+    throw new Error(`cannot attach session '${sessionId}' to workspace 'ws-parent': its cwd resolves to '${temp}'`)
+  },
+})
+const nestedCwd = await tool.execute(
+  { summary: 'nested cwd', nextPrompt: 'nested cwd', forceNew: true },
+  { agent: { session }, signal: new AbortController().signal, concludeTurn() {} },
+)
+assert.equal(nestedCwd.status, 'created')
+assert.match(nestedCwd.message, /subdirectory/)
+workspaces.pop()
 
 // Compatibility: a DSH build that exposes only the hard requirements (tools +
 // systemPrompt) must still activate. Missing optional services produce warnings,
