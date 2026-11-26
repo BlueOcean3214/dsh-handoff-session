@@ -150,7 +150,10 @@ const ctx = {
     if (name === 'sessionQuery' && queryAvailable) return ctx.sessionQuery
     if (name === 'sessionPersistence' && persistenceAvailable) return ctx.sessionPersistence
     if (name === 'subagents' && subagentAvailable) return subagents
-    return undefined
+    // Every other registered service resolves like a real Host would; services
+    // switched off above stay absent, which is what the lookup contract means.
+    if (name === 'sessionQuery' || name === 'sessionPersistence') return undefined
+    return ctx[name]
   },
   sessionController: {
     // The real contract reports domain failures as { error }, never as a throw.
@@ -403,6 +406,51 @@ const unreadable = await tool.execute(
 assert.equal(unreadable.status, 'created')
 assert.match(await readFile(unreadable.handoffPath, 'utf8'), /## 子智能体/)
 subagentReadFails = false
+
+// Compatibility: a DSH build that exposes only the hard requirements (tools +
+// systemPrompt) must still activate. Missing optional services produce warnings,
+// and the tool fails with a clear message instead of crashing the Host.
+{
+  let compatTool
+  const warnings = []
+  const bare = {
+    effect(setup) {
+      const disposer = setup()
+      cleanup.push(disposer)
+      return disposer
+    },
+    logger: { warn: (message) => warnings.push(String(message)) },
+    // A Host that moved every optional service behind a throwing lookup.
+    get() {
+      throw new Error('unknown service')
+    },
+    agentPresets: {
+      async remoteExportList() {
+        return { presets: [{ id: 'ptc', name: 'PTC' }] }
+      },
+    },
+    systemPrompt: {
+      section() { return () => {} },
+      context() { return () => {} },
+    },
+    tools: {
+      register(definition) {
+        compatTool = definition
+        return () => {}
+      },
+    },
+  }
+  apply(bare, {})
+  assert.equal(typeof compatTool?.execute, 'function')
+  assert.ok(warnings.some((line) => /sessionProjections/.test(line)), `expected a projection warning, got ${JSON.stringify(warnings)}`)
+  await assert.rejects(
+    () => compatTool.execute(
+      { summary: 'bare host', nextPrompt: 'bare host' },
+      { agent: { session }, signal: new AbortController().signal, concludeTurn() {} },
+    ),
+    /sessionController/,
+  )
+}
 
 for (const dispose of cleanup.reverse()) dispose?.()
 await rm(temp, { recursive: true, force: true })

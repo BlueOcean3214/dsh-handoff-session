@@ -889,7 +889,10 @@ window.__ModuleLoader__.load({
     `
 
     return {
-      inject: ['slots', 'locale', 'uiWorkspace', 'sessions'],
+      // Only the slot registry is required. locale, uiWorkspace and sessions are
+      // read defensively so a newer Web shell that renames one cannot stop the
+      // strip from mounting.
+      inject: ['slots'],
       apply(ctx) {
         const translate = ctx.locale?.bind?.('session-handoff')
         const t = (key) => {
@@ -919,17 +922,21 @@ window.__ModuleLoader__.load({
           }
         }, 'session-handoff ui strings')
 
-        ctx.slots.inject('conversation.composer.dock', () =>
-          ctx.slots.register(
-            {
-              name: 'conversation.composer.dock',
-              id: 'session-handoff',
-              order: 2,
-            },
-            (props) =>
-              h(HandoffStrip, { ...props, t, getUiWorkspace: () => ctx.uiWorkspace, getSessions: () => ctx.sessions }),
-          ),
-        )
+        try {
+          ctx.slots.inject('conversation.composer.dock', () =>
+            ctx.slots.register(
+              {
+                name: 'conversation.composer.dock',
+                id: 'session-handoff',
+                order: 2,
+              },
+              (props) =>
+                h(HandoffStrip, { ...props, t, getUiWorkspace: () => ctx.uiWorkspace, getSessions: () => ctx.sessions }),
+            ),
+          )
+        } catch (error) {
+          ctx.logger?.warn?.(`session-handoff ui: composer dock unavailable (${String(error)}); the strip stays hidden`)
+        }
       },
     }
   },

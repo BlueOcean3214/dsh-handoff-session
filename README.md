@@ -158,6 +158,15 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 - 两种都支持 `{level}`（当前等级文字）、`{pct}`（上下文占比）、`{turn}`、`{step}` 占位符，发送前会替换成当前值；留空即用内置文案。
 - 选了「下个会话模式」时，模式说明仍然会追加在指令末尾，不受自定义文案影响。
 
+## 兼容性
+
+- `package.json` 声明 `engines.dsh: ">=0.2.0-rc.2 <0.3.0-0"`、`engines.node: ">=20"`；开发与真机验证用的是 DSH 桌面版 `0.2.1-rc.3`。DSH 1.0 或 0.3 起属于未验证区间，市场安装时会被 `engines.dsh` 拦下，而不是装上去再炸宿主。
+- 插件激活只硬依赖 `tools` 与 `systemPrompt` 两个服务；其余服务（`sessionProjections` / `sessionController` / `sessionQuery` / `sessionPersistence` / `subagents` / `workspaceRegistry` / `agentPresets`）都是可选解析（`ctx.get()` 优先，取不到再回落到同名属性）。
+- 可选服务缺失时的降级行为：没有 `sessionProjections` → 压力投影不注册，面板与 `<session-pressure>` 保持空，Host 日志有一条 warning，不影响其它插件；没有 `subagents` → 交接照常，文档里不出现子智能体小节；没有 `sessionQuery` / `sessionPersistence` → 复用判定退到 `resolveAgent()`，再不行按“耐久性未验证”允许复用；没有 `agentPresets` → 面板隐藏“下个会话模式”，交接仍可用。
+- 唯一硬失败是 `sessionController`（`create` / `prompt`）：没有它就无法开新会话，工具会直接报错并说明“这个 DSH 版本还没被支持”，且在任何写盘之前失败，不会留下半份交接文档。
+- Client 半只硬依赖 `slots`；`conversation.composer.dock` 槽不存在时状态栏不显示，Host 侧交接仍然可用。
+- 报兼容问题时请附上 DSH 版本（桌面版看 `关于`，或读 `%USERPROFILE%\.dsh\dsh-runtimes\dsh-primary-runtime\runtime.json` 里的 `desktopVersion`）和插件版本。
+
 ## 已验证
 - `node --check index.js` 通过，`node selftest.mjs` 输出 `selftest: ok`。
 - `node --check client.js` 通过，`node client-selftest.mjs` 输出 `client selftest: ok`（用假 React/模块加载器渲染折叠态、展开态、已交接态和无投影态）。

@@ -411,7 +411,7 @@ async function collectSubagents(ctx, session, config, agent) {
     items: [],
   }
   if (config.subagents === 'off') return report
-  const service = typeof ctx.get === 'function' ? ctx.get('subagents') : ctx.subagents
+  const service = serviceOf(ctx, 'subagents')
   if (service === undefined || typeof service.listDescendants !== 'function') return report
   report.available = true
 
@@ -436,7 +436,7 @@ async function collectSubagents(ctx, session, config, agent) {
   report.omitted = Math.max(0, direct.length - config.subagentMaxItems)
   const chosen = config.subagentMaxItems > 0 ? direct.slice(0, config.subagentMaxItems) : []
 
-  const query = typeof ctx.get === 'function' ? ctx.get('sessionQuery') : ctx.sessionQuery
+  const query = serviceOf(ctx, 'sessionQuery')
   for (const row of chosen) {
     let summary = { task: '', progress: '', tools: [], turns: 0, steps: 0, lastTime: 0, lastTurnReason: undefined }
     if (query !== undefined && typeof query.readSession === 'function') {
@@ -765,6 +765,27 @@ ${summary}${transcriptNote}${takeoverNote}
 ${nextPrompt}`
 }
 
+/**
+ * Resolve a Host service that this plugin can live without.
+ *
+ * Only `tools` and `systemPrompt` are hard requirements. Everything else is
+ * looked up here so that a DSH build which renames, moves, or drops a service
+ * degrades to a warning instead of failing plugin activation.
+ */
+function serviceOf(ctx, name) {
+  if (ctx === undefined || ctx === null) return undefined
+  try {
+    if (typeof ctx.get === 'function') {
+      // `get` is authoritative when it exists: a service it reports as absent is
+      // absent, even if a stale property happens to linger on the context.
+      return ctx.get(name)
+    }
+  } catch {
+    // Lookup API changed shape: fall through to the property.
+  }
+  return ctx[name]
+}
+
 /** Normalize optional array arguments; the model may omit them. */
 function stringList(value) {
   if (!Array.isArray(value)) return []
@@ -774,7 +795,7 @@ function stringList(value) {
 /** Find the workspace that owns this cwd, if any. */
 function workspaceFor(ctx, cwd) {
   try {
-    const workspaces = ctx.workspaceRegistry?.list?.() ?? []
+    const workspaces = serviceOf(ctx, 'workspaceRegistry')?.list?.() ?? []
     const normalize = (value) => String(value).replace(/[\\/]+$/, '').toLowerCase()
     const target = normalize(cwd)
     return workspaces.find((workspace) => {
@@ -833,7 +854,7 @@ async function findExistingHandoff(directory, sessionId, labels) {
  * listing's `persisted` flag; the live-Agent probe stays only as a last resort.
  */
 async function probeHandoffTarget(ctx, sessionId) {
-  const query = typeof ctx.get === 'function' ? ctx.get('sessionQuery') : ctx.sessionQuery
+  const query = serviceOf(ctx, 'sessionQuery')
   if (query !== undefined && typeof query.listSessions === 'function') {
     try {
       const records = await query.listSessions()
@@ -846,7 +867,7 @@ async function probeHandoffTarget(ctx, sessionId) {
       ctx.logger?.warn?.(`session_handoff: listing Sessions to verify ${sessionId} failed (${String(error)}); falling back to a live-Agent probe`)
     }
   }
-  const persistence = typeof ctx.get === 'function' ? ctx.get('sessionPersistence') : ctx.sessionPersistence
+  const persistence = serviceOf(ctx, 'sessionPersistence')
   if (persistence !== undefined && typeof persistence.stat === 'function') {
     try {
       const snapshot = await persistence.stat(sessionId)
@@ -857,7 +878,11 @@ async function probeHandoffTarget(ctx, sessionId) {
     }
   }
   try {
-    const resolved = await ctx.sessionController.resolveAgent(sessionId)
+    const controller = serviceOf(ctx, 'sessionController')
+    if (controller === undefined || typeof controller.resolveAgent !== 'function') {
+      return { durable: true, reason: 'durability unverified: this DSH build exposes no sessionController' }
+    }
+    const resolved = await controller.resolveAgent(sessionId)
     if (resolved !== null && typeof resolved === 'object' && 'error' in resolved) {
       return { durable: false, reason: `resolveAgent reported ${String(resolved.error?.message ?? resolved.error)}` }
     }
@@ -967,7 +992,7 @@ function createTool(ctx, config, completed, inFlight) {
       },
     },
     async execute(args, exec) {
-      const agent = exec.agent ?? ctx.agents.currentInitiator()
+      const agent = exec.agent ?? serviceOf(ctx, 'agents')?.currentInitiator?.()
       if (agent === undefined) throw new Error('session_handoff must run inside an agent Session')
       const session = agent.session
       const header = session.header
@@ -997,7 +1022,9 @@ async function performHandoff(options) {
   const cwd = session.header.cwd ?? process.cwd()
   const labels = LABELS[config.language] ?? LABELS.zh
   const now = new Date()
-  const state = ctx.sessionProjections.stateOf(session, PROJECTION_KEY) ?? {
+  const state = (typeof serviceOf(ctx, 'sessionProjections')?.stateOf === 'function'
+    ? serviceOf(ctx, 'sessionProjections').stateOf(session, PROJECTION_KEY)
+    : undefined) ?? {
     turn: 0,
     step: 0,
     contextWindow: 0,
@@ -1018,6 +1045,15 @@ async function performHandoff(options) {
     : undefined
   if (summary === '') throw new Error('session_handoff requires a non-empty summary')
   if (nextPrompt === '') throw new Error('session_handoff requires a non-empty nextPrompt')
+
+  // A handoff cannot continue without creating and seeding a Session. Check this
+  // before writing any file so an unsupported Host leaves nothing half-done.
+  const sessionController = serviceOf(ctx, 'sessionController')
+  if (sessionController === undefined
+    || typeof sessionController.create !== 'function'
+    || typeof sessionController.prompt !== 'function') {
+    throw new Error('session_handoff needs the DSH sessionController service (create/prompt), which this DSH build does not expose. Update dsh-handoff-session; if it is already the latest version, this DSH release is not supported yet.')
+  }
 
   const normalized = {
     goal: typeof args.goal === 'string' ? args.goal : undefined,
@@ -1092,7 +1128,7 @@ async function performHandoff(options) {
     const request = sameDirectory ? { workspaceId: workspace.id } : { cwd }
     const preset = requestedPreset ?? session.header.agentPreset
     if (preset !== undefined) request.agentPreset = preset
-    created = await ctx.sessionController.create(request)
+    created = await sessionController.create(request)
     if (workspace !== undefined && !sameDirectory) await workspace.attachSession?.(created.sessionId)
   } catch (error) {
     throw new Error(`The handoff document was written to ${handoffPath}, but creating the fresh Session failed: ${String(error)}`)
@@ -1113,7 +1149,7 @@ async function performHandoff(options) {
     subagents,
   })
   try {
-    await ctx.sessionController.prompt(
+    await sessionController.prompt(
       {
         requestId: randomUUID(),
         sessionId: created.sessionId,
@@ -1145,7 +1181,7 @@ async function performHandoff(options) {
 
 /** Read the current agent-preset roster, tolerating profiles without the registry. */
 async function listAgentPresets(ctx) {
-  const registry = ctx.agentPresets
+  const registry = serviceOf(ctx, 'agentPresets')
   if (registry === undefined || typeof registry.remoteExportList !== 'function') return []
   try {
     const result = await registry.remoteExportList()
@@ -1167,7 +1203,12 @@ async function listAgentPresets(ctx) {
 
 /** Register the pressure projection. */
 function registerProjection(ctx, config, getPresets) {
-  return ctx.sessionProjections.register({
+  const projections = serviceOf(ctx, 'sessionProjections')
+  if (projections === undefined || typeof projections.register !== 'function') {
+    ctx.logger?.warn?.('session-handoff: this DSH build exposes no sessionProjections service; pressure metrics and the panel status stay empty until it returns')
+    return undefined
+  }
+  return projections.register({
     key: PROJECTION_KEY,
     stateVersion: 3,
     stateSchema: { parse: (value) => value },
@@ -1292,7 +1333,11 @@ function registerProjection(ctx, config, getPresets) {
   })
 }
 
-export const inject = ['tools', 'systemPrompt', 'sessionProjections', 'sessionController', 'agents', 'workspaceRegistry', 'agentPresets']
+// Only core services are hard requirements. Subagents, sessionController,
+// sessionQuery, sessionPersistence, workspaceRegistry and agentPresets are
+// resolved through serviceOf(), so a DSH build that renames, moves, or drops
+// one of them degrades to a warning instead of blocking activation.
+export const inject = ['tools', 'systemPrompt']
 
 /** Activate the bundle. */
 export function apply(ctx, rawConfig) {
@@ -1319,26 +1364,44 @@ export function apply(ctx, rawConfig) {
     }
     refreshPresets()
 
-    const disposers = [
-      registerProjection(ctx, config, () => presets),
-      ctx.systemPrompt.section({
-        name: 'session-handoff-policy',
-        order: 650,
-        text: policyText(config),
-      }),
-      ctx.systemPrompt.context({
-        name: 'session-handoff-pressure',
-        order: 4500,
-        text: (context) => {
-          const agent = context?.agent ?? context?.scope
-          if (agent?.session === undefined) return ''
-          const state = ctx.sessionProjections.stateOf(agent.session, PROJECTION_KEY)
-          if (state === undefined) return ''
-          return pressureText(state, assess(state, config), config)
-        },
-      }),
-      ctx.tools.register(createTool(ctx, config, completed, inFlight)),
-    ]
+    const disposers = []
+    // Each contribution is installed independently: a DSH build that changes
+    // one API shape (systemPrompt.context, tools.register, ...) must not take
+    // the rest of the plugin down with it.
+    const install = (label, contribution) => {
+      try {
+        const dispose = contribution()
+        if (typeof dispose === 'function') disposers.push(dispose)
+      } catch (error) {
+        ctx.logger?.warn?.(`session-handoff: ${label} could not be registered on this DSH build (${String(error)}); continuing without it`)
+      }
+    }
+
+    install('the pressure projection', () => registerProjection(ctx, config, () => presets))
+    install('the Session policy section', () => ctx.systemPrompt.section({
+      name: 'session-handoff-policy',
+      order: 650,
+      text: policyText(config),
+    }))
+    install('the pressure context block', () => ctx.systemPrompt.context({
+      name: 'session-handoff-pressure',
+      order: 4500,
+      text: (context) => {
+        const agent = context?.agent ?? context?.scope
+        if (agent?.session === undefined) return ''
+        const projections = serviceOf(ctx, 'sessionProjections')
+        if (typeof projections?.stateOf !== 'function') return ''
+        let state
+        try {
+          state = projections.stateOf(agent.session, PROJECTION_KEY)
+        } catch {
+          return ''
+        }
+        if (state === undefined) return ''
+        return pressureText(state, assess(state, config), config)
+      },
+    }))
+    install('the session_handoff tool', () => ctx.tools.register(createTool(ctx, config, completed, inFlight)))
     return () => {
       stopped = true
       if (presetTimer !== undefined) clearTimeout(presetTimer)
