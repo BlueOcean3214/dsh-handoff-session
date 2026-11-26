@@ -98,7 +98,8 @@ node market/prep-catalog-entry.mjs --owner <你的 GitHub 用户名>
 
 - 官方目录 PR：**#11897 已于 2026-11-04 00:56（+08:00）合并**，条目 `data/plugins/BlueOcean3214__dsh-handoff-session.yml` 已进 `awesome-dsh-plugin`；官方「发现」页与 `dsh-market` 面板（`https://awesome-dsh-plugin.com/plugins.json`）都能搜到，详情页 `https://awesome-dsh-plugin.com/p/BlueOcean3214/dsh-handoff-session/`。后续改标题/分类直接给该 YAML 提小 PR 即可，不用重发 npm。
 - `screenshots.json`（可选）：仓库根放 1–8 张截图能让详情页更好看，需要真实界面截图后再加。
-- `engines.dsh`：本机运行时是预发布版（`@deepseek-ai/dsh-desktop-runtime 0.2.1-rc.3`），写死 range 容易把预发布版排除掉，暂时留空。
+- `engines.dsh`：从 0.9.1 起写 `>=0.2.0-rc.2 <0.3.0-0`（与 npm 上 `dsh-mnemon`、`dshmarket` 等插件声明的区间取交集，覆盖当前的 `0.2.1-rc.3`），`engines.node` 为 `>=20`。DSH 未来的 0.3/1.0 会被安装前拦下，而不是装上去才炸。
+- 交接时新会话的 preset：取 `agentPreset` 参数，没给就沿用旧会话的 preset。若该 preset 在当前 profile 已不存在（升级 DSH 或改过预设名），会**自动去掉 preset 重试一次**，用 profile 默认预设开新会话，并在返回消息里写明；这正是 0.9.0 及更早版本「交接失败、开不了新会话」的主因。
 
 > 发布细节：`npm publish` 首次上传返回 `202` + “being processed”，registry 里先出现一个 `0.0.0-stage` 占位版本，这次约 1 分钟后 `dist-tags.latest` 才变成 `0.6.1`——这是 npm 的暂存机制，不是失败。账号开了 2FA 时用带 bypass-2FA 的 granular token 发布。从 0.9.0 那次起，用户要求把这颗 token 常驻在 `C:\Users\Santuo\.npmrc`（`//registry.npmjs.org/:_authToken=npm_…`），所以以后发版直接 `npm publish` 即可；注意旧 token 会静默变成 `401 Unauthorized`（响应体为空），先 `npm whoami` 确认再发。
 >

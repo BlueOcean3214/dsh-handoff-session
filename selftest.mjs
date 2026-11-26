@@ -21,6 +21,9 @@ const persistedSessions = new Set()
 let createdCount = 0
 let queryAvailable = true
 let persistenceAvailable = true
+// Preset ids the fixture profile no longer has; requesting one fails like a
+// real session.create does after a DSH upgrade or a preset rename.
+const stalePresets = new Set()
 
 const state = {
   turn: 22,
@@ -163,6 +166,9 @@ const ctx = {
     },
     async create(request) {
       createdRequest = request
+      if (request.agentPreset !== undefined && stalePresets.has(request.agentPreset)) {
+        throw new Error(`session/create-failed: agent preset "${request.agentPreset}" is not in this profile`)
+      }
       const sessionId = `new-session-${++createdCount}`
       liveSessions.add(sessionId)
       persistedSessions.add(sessionId)
@@ -406,6 +412,19 @@ const unreadable = await tool.execute(
 assert.equal(unreadable.status, 'created')
 assert.match(await readFile(unreadable.handoffPath, 'utf8'), /## 子智能体/)
 subagentReadFails = false
+
+// A preset id this profile no longer has must not cost the user a new Session:
+// creation is retried once with the profile default, and the result says so.
+stalePresets.add('retired')
+const stalePreset = await tool.execute(
+  { summary: 'stale preset', nextPrompt: 'stale preset', forceNew: true, agentPreset: 'retired' },
+  { agent: { session }, signal: new AbortController().signal, concludeTurn() {} },
+)
+assert.equal(stalePreset.status, 'created')
+assert.equal(createdRequest.agentPreset, undefined)
+assert.match(stalePreset.message, /retired/)
+assert.match(stalePreset.message, /default preset/)
+stalePresets.clear()
 
 // Compatibility: a DSH build that exposes only the hard requirements (tools +
 // systemPrompt) must still activate. Missing optional services produce warnings,

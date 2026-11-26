@@ -1122,16 +1122,37 @@ async function performHandoff(options) {
   await writeFile(handoffPath, markdown, 'utf8')
 
   let created
+  let presetDropped = false
   const workspace = workspaceFor(ctx, cwd)
   const sameDirectory = workspace !== undefined && workspace.path.replace(/[\\/]+$/, '').toLowerCase() === cwd.replace(/[\\/]+$/, '').toLowerCase()
-  try {
+  const preset = requestedPreset ?? session.header.agentPreset
+  const createFreshSession = async () => {
     const request = sameDirectory ? { workspaceId: workspace.id } : { cwd }
-    const preset = requestedPreset ?? session.header.agentPreset
-    if (preset !== undefined) request.agentPreset = preset
-    created = await sessionController.create(request)
-    if (workspace !== undefined && !sameDirectory) await workspace.attachSession?.(created.sessionId)
+    if (preset !== undefined && !presetDropped) request.agentPreset = preset
+    const answer = await sessionController.create(request)
+    if (answer === undefined || typeof answer.sessionId !== 'string' || answer.sessionId === '') {
+      throw new Error('sessionController.create returned no sessionId')
+    }
+    if (workspace !== undefined && !sameDirectory) await workspace.attachSession?.(answer.sessionId)
+    return answer
+  }
+  try {
+    created = await createFreshSession()
   } catch (error) {
-    throw new Error(`The handoff document was written to ${handoffPath}, but creating the fresh Session failed: ${String(error)}`)
+    // A preset id this profile no longer has (removed, renamed, or inherited from
+    // an older DSH) makes session.create fail. The handoff document is already
+    // valid, so retry once with the profile's own default instead of leaving the
+    // user with no new Session at all.
+    if (preset !== undefined && /preset/i.test(String(error))) {
+      presetDropped = true
+      try {
+        created = await createFreshSession()
+      } catch (retryError) {
+        throw new Error(`The handoff document was written to ${handoffPath}, but creating the fresh Session failed: ${String(retryError)}`)
+      }
+    } else {
+      throw new Error(`The handoff document was written to ${handoffPath}, but creating the fresh Session failed: ${String(error)}`)
+    }
   }
 
   try {
@@ -1167,6 +1188,7 @@ async function performHandoff(options) {
   const message = [
     'Handoff complete. A fresh Session is running.',
     `- New Session: ${created.sessionId}`,
+    ...(presetDropped ? [`- Preset: ${preset} is not available in this profile, so the new Session uses the default preset`] : []),
     ...(recordedId !== undefined && previousTarget?.durable === false ? [`- Replaced: ${recordedId} (${previousTarget.reason})`] : []),
     `- Handoff document: ${handoffPath}`,
     ...(transcriptPath !== undefined ? [`- Full transcript: ${transcriptPath}`] : []),
