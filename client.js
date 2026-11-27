@@ -17,6 +17,20 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
+    // DSH's Cordis context proxy throws on any service read that was not
+    // declared in `inject`; optional chaining cannot catch that. `ctx.get`
+    // is the supported side-channel for optional services.
+    const serviceOf = (ctx, name) => {
+      try {
+        if (typeof ctx.get === 'function') return ctx.get(name)
+      } catch {}
+      try {
+        return ctx[name]
+      } catch {
+        return undefined
+      }
+    }
+
     const PROJECTION_KEY = 'sessionHandoffPressure'
 
     const DICT = {
@@ -894,7 +908,8 @@ window.__ModuleLoader__.load({
       // strip from mounting.
       inject: ['slots'],
       apply(ctx) {
-        const translate = ctx.locale?.bind?.('session-handoff')
+        const locale = serviceOf(ctx, 'locale')
+        const translate = locale?.bind?.('session-handoff')
         const t = (key) => {
           if (typeof translate === 'function') {
             try {
@@ -908,8 +923,8 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           const disposers = []
           try {
-            disposers.push(ctx.locale.register('session-handoff', 'zh', DICT.zh))
-            disposers.push(ctx.locale.register('session-handoff', 'en', DICT.en))
+            disposers.push(locale.register('session-handoff', 'zh', DICT.zh))
+            disposers.push(locale.register('session-handoff', 'en', DICT.en))
           } catch (error) {
             ctx.logger?.warn?.(`session-handoff ui: locale registration skipped: ${String(error)}`)
           }
@@ -931,7 +946,12 @@ window.__ModuleLoader__.load({
                 order: 2,
               },
               (props) =>
-                h(HandoffStrip, { ...props, t, getUiWorkspace: () => ctx.uiWorkspace, getSessions: () => ctx.sessions }),
+                h(HandoffStrip, {
+                  ...props,
+                  t,
+                  getUiWorkspace: () => serviceOf(ctx, 'uiWorkspace'),
+                  getSessions: () => serviceOf(ctx, 'sessions'),
+                }),
             ),
           )
         } catch (error) {
